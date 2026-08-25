@@ -148,13 +148,10 @@ export default function AnalysisWorkspace() {
   const [pdfError, setPdfError] = useState("");
 
   const configuredProvider = providers.find((item) => item.id === provider);
-  const pageLinkValid =
-    !project.pageLink.trim() || /^https?:\/\/\S+$/i.test(project.pageLink.trim());
   const requiredFieldsReady = Boolean(
-    project.proposal.trim() &&
+    project.projectName.trim() &&
       project.subject.trim() &&
-      project.context.trim() &&
-      pageLinkValid,
+      project.context.trim(),
   );
   const allSectionsReady = sections.every(
     (section) => section.status === "done" && section.content.trim(),
@@ -302,7 +299,9 @@ export default function AnalysisWorkspace() {
     sectionId: AnalysisSectionId,
     previousResults: Partial<Record<AnalysisSectionId, string>>,
   ) => {
-    if (!workbook) throw new Error("Anexe um arquivo Excel antes de continuar.");
+    if (!workbook) {
+      throw new Error("Anexe um arquivo CSV ou Excel antes de continuar.");
+    }
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -507,7 +506,7 @@ export default function AnalysisWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentTitle: "Relatório Câmara nas Redes",
-          projectName: project.proposal,
+          projectName: project.projectName,
           headerImage,
           sections: sections.map((section) => ({
             title: section.title,
@@ -526,7 +525,7 @@ export default function AnalysisWorkspace() {
       setPdfName(
         extractPdfFileName(
           response.headers.get("content-disposition"),
-          localPdfName(project.proposal),
+          localPdfName(project.projectName),
         ),
       );
     } catch (error) {
@@ -653,11 +652,11 @@ export default function AnalysisWorkspace() {
                   <span className="section-kicker">01 · Proposta</span>
                   <h2 id="upload-title">Anexe a base de postagens</h2>
                   <p>
-                    O sistema valida o arquivo, lê todas as planilhas utilizáveis e
-                    organiza os registros antes da análise.
+                    O sistema valida arquivos CSV ou Excel, lê todas as tabelas
+                    utilizáveis e organiza os registros antes da análise.
                   </p>
                 </div>
-                <span className="format-chip">XLSX / XLS · até {runtimeLimits.maxFileMb} MB</span>
+                <span className="format-chip">CSV / XLSX / XLS · até {runtimeLimits.maxFileMb} MB</span>
               </div>
 
               {!workbook && (
@@ -676,14 +675,14 @@ export default function AnalysisWorkspace() {
                         <LoaderCircle size={30} className="spin" />
                       </div>
                       <h3>Processando a proposta</h3>
-                      <p>Validando planilhas, cabeçalhos, linhas e colunas.</p>
+                      <p>Validando tabelas, cabeçalhos, linhas e colunas.</p>
                     </>
                   ) : (
                     <>
                       <div className="upload-icon">
                         <UploadCloud size={30} />
                       </div>
-                      <h3>Arraste o Excel para esta área</h3>
+                      <h3>Arraste o CSV ou Excel para esta área</h3>
                       <p>ou selecione o arquivo no seu computador</p>
                       <button
                         type="button"
@@ -698,7 +697,7 @@ export default function AnalysisWorkspace() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    accept=".csv,.xlsx,.xls,text/csv,application/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                     onChange={(event) => void processFile(event.target.files?.[0])}
                     hidden
                   />
@@ -739,15 +738,15 @@ export default function AnalysisWorkspace() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".xlsx,.xls"
+                      accept=".csv,.xlsx,.xls,text/csv,application/csv"
                       onChange={(event) => void processFile(event.target.files?.[0])}
                       hidden
                     />
                   </div>
 
                   <div className="metrics-grid">
-                    <div><span>Planilhas encontradas</span><strong>{workbook.totalSheets}</strong></div>
-                    <div><span>Planilhas analisáveis</span><strong>{workbook.usableSheets}</strong></div>
+                    <div><span>Tabelas encontradas</span><strong>{workbook.totalSheets}</strong></div>
+                    <div><span>Tabelas analisáveis</span><strong>{workbook.usableSheets}</strong></div>
                     <div><span>Registros reconhecidos</span><strong>{workbook.recordCount.toLocaleString("pt-BR")}</strong></div>
                     <div><span>Repetições pré-marcadas</span><strong>{workbook.duplicateCount.toLocaleString("pt-BR")}</strong></div>
                   </div>
@@ -795,133 +794,66 @@ export default function AnalysisWorkspace() {
               <div className="context-layout">
                 <div className="form-panel">
                   <div className="form-section-heading">
-                    <h3>Identificação</h3>
-                    <span>Base principal</span>
+                    <h3>Informações essenciais</h3>
+                    <span>6 campos</span>
                   </div>
                   <div className="form-grid">
-                    <label>
-                      <span>Proposta ou nome do projeto *</span>
+                    <label className="span-2">
+                      <span>Nome do projeto *</span>
                       <input
-                        className={fieldClass(project.proposal, true)}
-                        value={project.proposal}
-                        onChange={(event) => updateProject("proposal", event.target.value)}
+                        className={fieldClass(project.projectName, true)}
+                        value={project.projectName}
+                        onChange={(event) => updateProject("projectName", event.target.value)}
                         placeholder="Ex.: PL 1234/2026"
                         maxLength={240}
                       />
                     </label>
-                    <label>
-                      <span>Tipo ou categoria</span>
-                      <input
-                        className="field-input"
-                        value={project.category}
-                        onChange={(event) => updateProject("category", event.target.value)}
-                        placeholder="Ex.: Projeto de lei"
-                        maxLength={240}
-                      />
-                    </label>
                     <label className="span-2">
-                      <span>Assunto da proposta *</span>
+                      <span>Ficha de tramitação</span>
                       <textarea
-                        className={fieldClass(project.subject, true)}
-                        value={project.subject}
-                        onChange={(event) => updateProject("subject", event.target.value)}
-                        placeholder="Explique de forma objetiva o tema tratado pela proposta."
+                        className="field-input"
+                        value={project.progressSheet}
+                        onChange={(event) => updateProject("progressSheet", event.target.value)}
+                        placeholder="Cole o link ou as principais informações da ficha de tramitação."
                         rows={3}
-                        maxLength={2000}
+                        maxLength={12000}
                       />
                     </label>
                     <label>
-                      <span>Link da página</span>
-                      <input
-                        className={`field-input ${pageLinkValid ? "" : "field-input-invalid"}`}
-                        type="url"
-                        value={project.pageLink}
-                        onChange={(event) => updateProject("pageLink", event.target.value)}
-                        placeholder="https://www.camara.leg.br/..."
-                        maxLength={2000}
-                        aria-invalid={!pageLinkValid}
-                      />
-                      {!pageLinkValid && <small className="field-error">Informe um endereço iniciado por http:// ou https://.</small>}
-                    </label>
-                    <label>
-                      <span>Prazo ou período</span>
-                      <input
-                        className="field-input"
-                        value={project.period}
-                        onChange={(event) => updateProject("period", event.target.value)}
-                        placeholder="Ex.: 18 a 24 de agosto de 2026"
-                        maxLength={500}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="form-section-heading separated">
-                    <h3>Situação e objetivo</h3>
-                    <span>Contexto analítico</span>
-                  </div>
-                  <div className="form-grid">
-                    <label className="span-2">
-                      <span>Contexto que levou à análise *</span>
+                      <span>Situação</span>
                       <textarea
-                        className={fieldClass(project.context, true)}
-                        value={project.context}
-                        onChange={(event) => updateProject("context", event.target.value)}
-                        placeholder="Descreva por que a proposta está sendo analisada neste período."
-                        rows={4}
+                        className="field-input"
+                        value={project.situation}
+                        onChange={(event) => updateProject("situation", event.target.value)}
+                        placeholder="Ex.: em discussão, votação prevista ou aguardando parecer."
+                        rows={3}
                         maxLength={8000}
                       />
                     </label>
                     <label>
-                      <span>Situação atual</span>
+                      <span>Assunto *</span>
                       <textarea
-                        className="field-input"
-                        value={project.currentSituation}
-                        onChange={(event) => updateProject("currentSituation", event.target.value)}
-                        placeholder="Ex.: em discussão, votação prevista..."
+                        className={fieldClass(project.subject, true)}
+                        value={project.subject}
+                        onChange={(event) => updateProject("subject", event.target.value)}
+                        placeholder="Explique de forma objetiva o tema tratado pelo projeto."
                         rows={3}
-                        maxLength={2000}
+                        maxLength={8000}
                       />
                     </label>
-                    <label>
-                      <span>Objetivo principal</span>
-                      <textarea
-                        className="field-input"
-                        value={project.objective}
-                        onChange={(event) => updateProject("objective", event.target.value)}
-                        placeholder="Qual decisão ou leitura este relatório deve apoiar?"
-                        rows={3}
-                        maxLength={4000}
-                      />
-                    </label>
-                    <label>
-                      <span>Área ou setor responsável</span>
-                      <input
-                        className="field-input"
-                        value={project.responsibleArea}
-                        onChange={(event) => updateProject("responsibleArea", event.target.value)}
-                        placeholder="Ex.: CCI / Direx"
-                        maxLength={500}
-                      />
-                    </label>
-                    <label>
-                      <span>Público relacionado</span>
-                      <input
-                        className="field-input"
-                        value={project.relatedAudience}
-                        onChange={(event) => updateProject("relatedAudience", event.target.value)}
-                        placeholder="Ex.: cidadãos e tomadores de decisão"
-                        maxLength={2000}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="form-section-heading separated">
-                    <h3>Dados complementares</h3>
-                    <span>Comandos 4, 6 e 7</span>
-                  </div>
-                  <div className="form-grid">
                     <label className="span-2">
-                      <span>Tabela de pontos de engajamento por canal</span>
+                      <span>Contexto *</span>
+                      <textarea
+                        className={fieldClass(project.context, true)}
+                        value={project.context}
+                        onChange={(event) => updateProject("context", event.target.value)}
+                        placeholder="Descreva por que o projeto está sendo analisado neste período."
+                        rows={4}
+                        maxLength={12000}
+                      />
+                    </label>
+                    <label className="span-2">
+                      <span>Quadro de engajamento por canal</span>
                       <textarea
                         className="field-input mono-input"
                         value={project.engagementByChannel}
@@ -930,29 +862,7 @@ export default function AnalysisWorkspace() {
                         rows={5}
                         maxLength={20000}
                       />
-                      <small>Cole aqui a tabela recebida por e-mail. Sem ela, o sistema não inventará valores.</small>
-                    </label>
-                    <label className="span-2">
-                      <span>Contexto e fatos do período</span>
-                      <textarea
-                        className="field-input"
-                        value={project.facts}
-                        onChange={(event) => updateProject("facts", event.target.value)}
-                        placeholder="Inclua acontecimentos que possam ter relação com a mobilização."
-                        rows={4}
-                        maxLength={12000}
-                      />
-                    </label>
-                    <label className="span-2">
-                      <span>Informações complementares</span>
-                      <textarea
-                        className="field-input"
-                        value={project.additionalInfo}
-                        onChange={(event) => updateProject("additionalInfo", event.target.value)}
-                        placeholder="Orientações adicionais que sejam necessárias para interpretar os dados."
-                        rows={3}
-                        maxLength={8000}
-                      />
+                      <small>Usado diretamente no 4º comando. Sem esse quadro, o sistema não estimará valores.</small>
                     </label>
                   </div>
                 </div>
@@ -1046,7 +956,7 @@ export default function AnalysisWorkspace() {
                   <Info size={20} />
                   <div>
                     <strong>Preenchimento pendente</strong>
-                    <span>Informe proposta, assunto e contexto e corrija qualquer campo inválido para liberar a geração.</span>
+                    <span>Informe nome do projeto, assunto e contexto para liberar a geração.</span>
                   </div>
                 </div>
               )}
@@ -1277,7 +1187,7 @@ export default function AnalysisWorkspace() {
                   <span className="section-kicker">05 · Documento final</span>
                   <h2 id="pdf-title">Gere e baixe o relatório</h2>
                   <p>
-                    O documento A4 contém apenas o cabeçalho, o nome da proposta,
+                    O documento A4 contém apenas o cabeçalho, o nome do projeto,
                     os resultados aprovados e a paginação.
                   </p>
                 </div>
@@ -1288,7 +1198,7 @@ export default function AnalysisWorkspace() {
                   <div className="pdf-document-icon"><FileText size={34} /></div>
                   <div>
                     <span>Versão final confirmada</span>
-                    <h3>{project.proposal}</h3>
+                    <h3>{project.projectName}</h3>
                     <ul>
                       <li><Check size={16} /> {sections.length} seções aprovadas</li>
                       <li><Check size={16} /> Layout A4 e páginas numeradas</li>

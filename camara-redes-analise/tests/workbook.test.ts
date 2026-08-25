@@ -31,6 +31,17 @@ function makeWorkbook(bookType: "xlsx" | "biff8") {
   return XLSX.write(workbook, { type: "array", bookType });
 }
 
+function makeCsv() {
+  return new TextEncoder().encode(
+    [
+      "Author;Text;Channel;Engagement Score",
+      "Ana;Apoio a proposta;Instagram;10",
+      "Ana;Apoio a proposta;Instagram;10",
+      "Bruno;Discordo da proposta;X;7",
+    ].join("\n"),
+  ).buffer;
+}
+
 test("processa xlsx com várias planilhas e marca repetido do mesmo autor", () => {
   const bytes = makeWorkbook("xlsx") as ArrayBuffer;
   const result = parseWorkbookArrayBuffer(bytes, {
@@ -56,14 +67,35 @@ test("aceita arquivo xls binário", () => {
   assert.equal(result.recordCount, 4);
 });
 
+test("aceita csv separado por ponto e vírgula", () => {
+  const bytes = makeCsv();
+  const result = parseWorkbookArrayBuffer(bytes, {
+    fileName: "proposta.csv",
+    fileSize: bytes.byteLength,
+  });
+
+  assert.equal(result.extension, ".csv");
+  assert.equal(result.totalSheets, 1);
+  assert.equal(result.recordCount, 3);
+  assert.equal(result.duplicateCount, 1);
+  assert.equal(result.sheets[0].detectedColumns.author, "Author");
+  assert.equal(result.sheets[0].detectedColumns.text, "Text");
+});
+
 test("rejeita extensão e assinatura incompatíveis", () => {
   const invalid = new TextEncoder().encode("não é excel").buffer;
   assert.throws(
-    () => validateWorkbookBytes("proposta.csv", invalid.byteLength, invalid),
+    () => validateWorkbookBytes("proposta.txt", invalid.byteLength, invalid),
     /Formato não permitido/,
   );
   assert.throws(
     () => validateWorkbookBytes("proposta.xlsx", invalid.byteLength, invalid),
+    /extensão não corresponde/,
+  );
+
+  const binary = new Uint8Array([0, 1, 2, 3, 4, 5]).buffer;
+  assert.throws(
+    () => validateWorkbookBytes("proposta.csv", binary.byteLength, binary),
     /extensão não corresponde/,
   );
 });
@@ -80,4 +112,3 @@ test("bloqueia contexto acima do limite sem truncar", () => {
     /ultrapassa o limite configurado/,
   );
 });
-

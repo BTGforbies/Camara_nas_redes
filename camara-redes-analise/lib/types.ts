@@ -33,7 +33,7 @@ export interface WorkbookSheet {
 export interface WorkbookPayload {
   fileName: string;
   fileSize: number;
-  extension: ".xlsx" | ".xls";
+  extension: ".xlsx" | ".xls" | ".csv";
   totalSheets: number;
   usableSheets: number;
   recordCount: number;
@@ -45,19 +45,12 @@ export interface WorkbookPayload {
 }
 
 export interface ProjectContext {
-  proposal: string;
+  projectName: string;
+  progressSheet: string;
+  situation: string;
   subject: string;
-  pageLink: string;
-  category: string;
-  currentSituation: string;
   context: string;
-  objective: string;
-  responsibleArea: string;
-  relatedAudience: string;
-  period: string;
   engagementByChannel: string;
-  facts: string;
-  additionalInfo: string;
 }
 
 export interface AnalysisSectionDefinition {
@@ -171,18 +164,10 @@ export const SECTION_DEFINITIONS: AnalysisSectionDefinition[] = [
 ];
 
 export const EMPTY_PROJECT_CONTEXT: ProjectContext = {
-  proposal: "",
+  projectName: "",
+  progressSheet: "",
+  situation: "",
   subject: "",
-  pageLink: "",
-  category: "",
-  currentSituation: "",
   context: "",
-  objective: "",
-  responsibleArea: "",
-  relatedAudience: "",
-  period: "",
   engagementByChannel: "",
-  facts: "",
-  additionalInfo: "",
 };
-

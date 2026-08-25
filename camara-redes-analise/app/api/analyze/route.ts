@@ -18,19 +18,12 @@ const sectionIds = [
 ] as const;
 
 const projectSchema = z.object({
-  proposal: z.string().trim().min(1).max(240),
-  subject: z.string().trim().min(1).max(2_000),
-  pageLink: z.string().trim().max(2_000),
-  category: z.string().trim().max(240),
-  currentSituation: z.string().trim().max(2_000),
-  context: z.string().trim().min(1).max(8_000),
-  objective: z.string().trim().max(4_000),
-  responsibleArea: z.string().trim().max(500),
-  relatedAudience: z.string().trim().max(2_000),
-  period: z.string().trim().max(500),
+  projectName: z.string().trim().min(1).max(240),
+  progressSheet: z.string().trim().max(12_000),
+  situation: z.string().trim().max(8_000),
+  subject: z.string().trim().min(1).max(8_000),
+  context: z.string().trim().min(1).max(12_000),
   engagementByChannel: z.string().trim().max(20_000),
-  facts: z.string().trim().max(12_000),
-  additionalInfo: z.string().trim().max(8_000),
 });
 
 const requestSchema = z.object({
@@ -118,4 +111,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

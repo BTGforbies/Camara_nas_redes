@@ -103,6 +103,20 @@ function hasOleSignature(bytes: Uint8Array) {
   return signature.every((value, index) => bytes[index] === value);
 }
 
+function hasTextSignature(bytes: Uint8Array) {
+  if (!bytes.length) return false;
+
+  let invalidControlCharacters = 0;
+  for (const byte of bytes) {
+    if (byte === 0) return false;
+    if (byte < 0x20 && ![0x09, 0x0a, 0x0c, 0x0d].includes(byte)) {
+      invalidControlCharacters += 1;
+    }
+  }
+
+  return invalidControlCharacters <= Math.max(2, bytes.length * 0.01);
+}
+
 export function validateWorkbookBytes(
   fileName: string,
   fileSize: number,
@@ -113,10 +127,14 @@ export function validateWorkbookBytes(
     ? ".xlsx"
     : fileName.toLowerCase().endsWith(".xls")
       ? ".xls"
-      : null;
+      : fileName.toLowerCase().endsWith(".csv")
+        ? ".csv"
+        : null;
 
   if (!extension) {
-    throw new Error("Formato não permitido. Envie um arquivo .xlsx ou .xls.");
+    throw new Error(
+      "Formato não permitido. Envie um arquivo .csv, .xlsx ou .xls.",
+    );
   }
   if (fileSize === 0 || buffer.byteLength === 0) {
     throw new Error("O arquivo está vazio.");
@@ -126,14 +144,17 @@ export function validateWorkbookBytes(
     throw new Error(`O arquivo ultrapassa o limite de ${limit} MB.`);
   }
 
-  const bytes = new Uint8Array(buffer.slice(0, 8));
+  const bytes = new Uint8Array(
+    buffer.slice(0, Math.min(buffer.byteLength, 8_192)),
+  );
   const signatureIsValid =
     (extension === ".xlsx" && hasZipSignature(bytes)) ||
-    (extension === ".xls" && hasOleSignature(bytes));
+    (extension === ".xls" && hasOleSignature(bytes)) ||
+    (extension === ".csv" && hasTextSignature(bytes));
 
   if (!signatureIsValid) {
     throw new Error(
-      "A extensão não corresponde a um arquivo Excel válido ou o arquivo está corrompido.",
+      "A extensão não corresponde a um arquivo CSV ou Excel válido, ou o arquivo está corrompido.",
     );
   }
 
@@ -253,7 +274,7 @@ export function parseWorkbookArrayBuffer(
   }
 
   if (!workbook.SheetNames.length) {
-    throw new Error("Nenhuma planilha foi encontrada no arquivo.");
+    throw new Error("Nenhuma tabela foi encontrada no arquivo.");
   }
 
   const sheets = workbook.SheetNames.map((name) => {
@@ -268,7 +289,7 @@ export function parseWorkbookArrayBuffer(
   }).filter((sheet): sheet is WorkbookSheet => sheet !== null);
 
   if (!sheets.length) {
-    throw new Error("Nenhum dado utilizável foi encontrado nas planilhas.");
+    throw new Error("Nenhum dado utilizável foi encontrado nas tabelas.");
   }
 
   const { duplicateCount, corruptedCount } = annotateRows(sheets);
@@ -277,7 +298,7 @@ export function parseWorkbookArrayBuffer(
 
   if (ignoredSheets) {
     warnings.push(
-      `${ignoredSheets} planilha(s) vazia(s) ou sem registros foram desconsideradas.`,
+      `${ignoredSheets} tabela(s) vazia(s) ou sem registros foram desconsideradas.`,
     );
   }
   for (const sheet of sheets) {
@@ -288,7 +309,7 @@ export function parseWorkbookArrayBuffer(
     }
     if (!sheet.detectedColumns.author) {
       warnings.push(
-        `A coluna de autor não foi identificada em “${sheet.name}”; repetidos dessa planilha dependerão da análise da IA.`,
+        `A coluna de autor não foi identificada em “${sheet.name}”; repetidos dessa tabela dependerão da análise da IA.`,
       );
     }
   }
@@ -326,4 +347,3 @@ export function parseWorkbookArrayBuffer(
     contextText,
   };
 }
-

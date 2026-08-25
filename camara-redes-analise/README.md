@@ -1,22 +1,22 @@
 # Câmara nas Redes - Análise de Propostas
 
-Sistema web independente para ler uma proposta em Excel, combinar a base com o contexto informado, executar os sete comandos do relatório **Câmara nas Redes**, permitir revisão manual e gerar um PDF A4 apenas com os resultados aprovados.
+Sistema web independente para ler uma base de proposta em CSV ou Excel, combinar os registros com o contexto informado, executar os sete comandos do relatório **Câmara nas Redes**, permitir revisão manual e gerar um PDF A4 apenas com os resultados aprovados.
 
 ## O que já funciona
 
-- Upload por seleção ou arrastar e soltar de `.xlsx` e `.xls`;
+- Upload por seleção ou arrastar e soltar de `.csv`, `.xlsx` e `.xls`;
 - Validação da extensão, assinatura real, tamanho, corrupção e conteúdo vazio;
-- Leitura de todas as planilhas com dados utilizáveis;
+- Leitura da tabela CSV e de todas as planilhas do Excel com dados utilizáveis;
 - Reconhecimento de cabeçalhos e pré-marcação de repetidos do mesmo autor;
 - Sinalização de linhas possivelmente corrompidas;
-- Formulário completo para proposta, assunto, contexto, fatos e tabela de pontos de engajamento;
+- Formulário enxuto com nome do projeto, ficha de tramitação, situação, assunto, contexto e quadro de engajamento por canal;
 - Execução sequencial dos sete comandos;
 - Seleção entre **Grok/xAI** e **OpenAI**;
 - Regeneração de uma única resposta ou de toda a análise;
 - Edição manual, restauração e confirmação da versão final;
 - PDF A4 com cabeçalho opcional, paginação e somente os resultados aprovados;
 - Interface responsiva e acessível por teclado;
-- Testes automatizados para Excel, prompts, PDF e renderização principal.
+- Testes automatizados para CSV, Excel, prompts, PDF e renderização principal.
 
 ## Rodar no VS Code - Windows
 
@@ -57,6 +57,18 @@ npm run dev
 
 Abra o endereço informado no terminal. A tela mostra automaticamente quais APIs estão configuradas.
 
+## Rodar no GitHub Codespaces
+
+Abra a pasta do projeto no terminal do Codespaces e execute:
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev -- --host 0.0.0.0
+```
+
+Antes do último comando, abra `.env.local`, configure sua chave e salve. Quando o Codespaces detectar a porta do sistema, mantenha-a privada e clique em **Abrir no navegador**. A configuração do Vite aceita os endereços `github.dev` e não depende da pasta oculta `.openai` para iniciar.
+
 ## Imagem no topo do relatório
 
 Há duas formas de adicionar a imagem:
@@ -84,7 +96,7 @@ Variáveis principais:
 | `OPENAI_MODEL` | Modelo da OpenAI | `gpt-5.6` |
 | `AI_REQUEST_TIMEOUT_MS` | Tempo máximo de cada comando | `240000` |
 | `AI_MAX_CONTEXT_CHARS` | Limite do contexto enviado à IA | `2000000` |
-| `NEXT_PUBLIC_MAX_FILE_MB` | Limite do Excel | `25` |
+| `NEXT_PUBLIC_MAX_FILE_MB` | Limite do CSV ou Excel | `25` |
 
 Uma assinatura do ChatGPT não fornece automaticamente créditos de API. Para usar a integração OpenAI, crie uma chave e configure faturamento na plataforma da API.
 
@@ -102,8 +114,8 @@ npm run test:unit # somente testes rápidos
 
 ## Fluxo de dados
 
-1. O navegador valida e lê o Excel com SheetJS.
-2. Todas as planilhas utilizáveis viram um contexto textual estruturado.
+1. O navegador valida e lê o CSV ou Excel com SheetJS.
+2. Todas as tabelas utilizáveis viram um contexto textual estruturado.
 3. O backend recebe o contexto e executa cada comando na ordem correta.
 4. A chave de API permanece no servidor e nunca é enviada ao navegador.
 5. O usuário revisa e confirma os textos.
@@ -127,7 +139,7 @@ lib/
   pdf.ts                 composição e paginação A4
   prompts.ts             sete comandos e suas dependências
   types.ts               contratos de dados
-  workbook.ts            validação e leitura do Excel
+  workbook.ts            validação e leitura de CSV e Excel
 tests/                   testes automatizados
 docs/                    decisões técnicas e relatório de testes
 ```

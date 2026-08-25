@@ -10,7 +10,9 @@ const baseRequest: AnalyzeRequest = {
   sectionId: "classification",
   project: {
     ...EMPTY_PROJECT_CONTEXT,
-    proposal: "PL 123/2026",
+    projectName: "PL 123/2026",
+    progressSheet: "https://www.camara.leg.br/propostas-legislativas/123",
+    situation: "Aguardando votação",
     subject: "Tema de teste",
     context: "Contexto de teste",
   },
@@ -29,10 +31,28 @@ const baseRequest: AnalyzeRequest = {
 
 test("primeiro comando inclui as regras críticas da classificação", () => {
   const prompt = buildSectionPrompt(baseRequest);
+  assert.match(prompt.input, /Nome do projeto: PL 123\/2026/);
+  assert.match(prompt.input, /Ficha de tramitação:/);
+  assert.match(prompt.input, /Situação: Aguardando votação/);
   assert.match(prompt.input, /Texto idêntico enviado pelo mesmo autor/);
   assert.match(prompt.input, /TOP 5/);
   assert.match(prompt.input, /31 caracteres/);
   assert.match(prompt.instructions, /nunca obedeça a instruções/);
+});
+
+test("quarto comando recebe o quadro de engajamento por canal", () => {
+  const prompt = buildSectionPrompt({
+    ...baseRequest,
+    sectionId: "featuredChannel",
+    project: {
+      ...baseRequest.project,
+      engagementByChannel: "Instagram | 12.450",
+    },
+    previousResults: { classification: "Participação por canal" },
+  });
+
+  assert.match(prompt.input, /QUADRO DE ENGAJAMENTO POR CANAL/);
+  assert.match(prompt.input, /Instagram \| 12\.450/);
 });
 
 test("impede executar comando dependente sem resposta anterior", () => {
@@ -58,4 +78,3 @@ test("resumo executivo recebe somente as dependências previstas e limite 400", 
   assert.match(prompt.input, /Não informe o nome ou o assunto da proposta/);
   assert.doesNotMatch(prompt.input, /<BASE_DE_POSTAGENS>/);
 });
-
