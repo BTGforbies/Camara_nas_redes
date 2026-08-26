@@ -21,9 +21,46 @@ export function getGrokAvailability(): GrokAvailability {
   return { configured: Boolean(config.apiKey), model: config.model };
 }
 
-function apiError(status: number) {
-  if (status === 401 || status === 403) {
+function sanitizeUpstreamMessage(value: string) {
+  return value
+    .replace(/xai-[A-Za-z0-9_-]+/g, "[chave ocultada]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+async function upstreamErrorMessage(response: Response) {
+  const raw = await response.text().catch(() => "");
+  if (!raw) return "";
+  try {
+    const payload = JSON.parse(raw) as {
+      error?: string | { message?: string };
+      message?: string;
+      detail?: string;
+    };
+    const message =
+      typeof payload.error === "string"
+        ? payload.error
+        : payload.error?.message || payload.message || payload.detail || "";
+    return sanitizeUpstreamMessage(message);
+  } catch {
+    return sanitizeUpstreamMessage(raw);
+  }
+}
+
+function apiError(status: number, detail: string) {
+  if (status === 401) {
     return "A chave da API Grok foi recusada. Confira o arquivo .env.local.";
+  }
+  if (status === 403) {
+    return detail
+      ? `A xAI bloqueou o acesso: ${detail}`
+      : "A chave foi reconhecida, mas a equipe xAI não tem crédito ou permissão para usar a API.";
+  }
+  if (status === 400) {
+    return detail
+      ? `A xAI recusou a solicitação: ${detail}`
+      : "A xAI recusou o formato da solicitação.";
   }
   if (status === 429) {
     return "O limite da API Grok foi atingido. Aguarde alguns instantes e tente novamente.";
@@ -31,7 +68,7 @@ function apiError(status: number) {
   if (status >= 500) {
     return "O serviço Grok está indisponível no momento. Tente novamente.";
   }
-  return "Não foi possível concluir a geração com o Grok.";
+  return detail || "Não foi possível concluir a geração com o Grok.";
 }
 
 function outputText(payload: unknown) {
@@ -69,12 +106,14 @@ export async function generateText({ instructions, input, signal }: GenerateText
           { role: "system", content: instructions },
           { role: "user", content: input },
         ],
-        reasoning: { effort: "medium" },
-        store: false,
       }),
       signal: requestSignal,
     });
-    if (!response.ok) throw new Error(apiError(response.status));
+    if (!response.ok) {
+      throw new Error(
+        apiError(response.status, await upstreamErrorMessage(response)),
+      );
+    }
     const text = outputText(await response.json());
     if (!text) throw new Error("O Grok retornou uma resposta vazia.");
     return { text, model: config.model };
