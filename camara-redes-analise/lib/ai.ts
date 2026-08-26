@@ -118,7 +118,12 @@ export async function generateText({ instructions, input, signal }: GenerateText
     if (!text) throw new Error("O Grok retornou uma resposta vazia.");
     return { text, model: config.model };
   } catch (error) {
-    if (error instanceof Error && (error.message.includes("Configure ") || error.message.includes("Grok"))) {
+    if (
+      error instanceof Error &&
+      (error.message.includes("Configure ") ||
+        error.message.includes("Grok") ||
+        error.message.includes("A xAI"))
+    ) {
       throw error;
     }
     if (error instanceof Error && error.name === "AbortError") {
