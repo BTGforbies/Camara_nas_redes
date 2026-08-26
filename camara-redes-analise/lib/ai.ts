@@ -1,95 +1,69 @@
-import OpenAI from "openai";
-
-import type { AiProvider } from "@/lib/types";
-
-export interface ProviderAvailability {
-  id: AiProvider;
-  label: string;
+export interface GrokAvailability {
   configured: boolean;
   model: string;
 }
 
 interface GenerateTextOptions {
-  provider: AiProvider;
   instructions: string;
   input: string;
   signal?: AbortSignal;
 }
 
-function configFor(provider: AiProvider) {
-  if (provider === "xai") {
-    return {
-      apiKey: process.env.XAI_API_KEY,
-      baseURL: "https://api.x.ai/v1",
-      model: process.env.XAI_MODEL || "grok-4.6",
-      label: "Grok / xAI",
-    };
-  }
-
+function grokConfig() {
   return {
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: undefined,
-    model: process.env.OPENAI_MODEL || "gpt-5.6",
-    label: "OpenAI",
+    apiKey: process.env.XAI_API_KEY,
+    model: process.env.XAI_MODEL || "grok-4.6",
   };
 }
 
-export function getProviderAvailability(): ProviderAvailability[] {
-  return (["xai", "openai"] as const).map((id) => {
-    const config = configFor(id);
-    return {
-      id,
-      label: config.label,
-      configured: Boolean(config.apiKey),
-      model: config.model,
-    };
-  });
+export function getGrokAvailability(): GrokAvailability {
+  const config = grokConfig();
+  return { configured: Boolean(config.apiKey), model: config.model };
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof OpenAI.APIError) {
-    if (error.status === 401 || error.status === 403) {
-      return "A chave da API foi recusada. Confira o arquivo .env.local.";
-    }
-    if (error.status === 429) {
-      return "O limite da API foi atingido. Aguarde alguns instantes e tente novamente.";
-    }
-    if (error.status && error.status >= 500) {
-      return "O serviço de IA está indisponível no momento. Tente novamente.";
-    }
+function apiError(status: number) {
+  if (status === 401 || status === 403) {
+    return "A chave da API Grok foi recusada. Confira o arquivo .env.local.";
   }
-  if (error instanceof Error && error.name === "AbortError") {
-    return "A geração foi cancelada.";
+  if (status === 429) {
+    return "O limite da API Grok foi atingido. Aguarde alguns instantes e tente novamente.";
   }
-  return "Não foi possível concluir a geração. Tente novamente sem apagar seus dados.";
+  if (status >= 500) {
+    return "O serviço Grok está indisponível no momento. Tente novamente.";
+  }
+  return "Não foi possível concluir a geração com o Grok.";
 }
 
-export async function generateText({
-  provider,
-  instructions,
-  input,
-  signal,
-}: GenerateTextOptions) {
-  const config = configFor(provider);
-  if (!config.apiKey) {
-    throw new Error(
-      provider === "xai"
-        ? "Configure XAI_API_KEY no arquivo .env.local."
-        : "Configure OPENAI_API_KEY no arquivo .env.local.",
-    );
-  }
+function outputText(payload: unknown) {
+  if (!payload || typeof payload !== "object") return "";
+  const response = payload as {
+    output_text?: unknown;
+    output?: Array<{ content?: Array<{ type?: string; text?: unknown }> }>;
+  };
+  if (typeof response.output_text === "string") return response.output_text.trim();
+  return (response.output ?? [])
+    .flatMap((item) => item.content ?? [])
+    .filter((item) => item.type === "output_text" && typeof item.text === "string")
+    .map((item) => String(item.text))
+    .join("\n")
+    .trim();
+}
 
+export async function generateText({ instructions, input, signal }: GenerateTextOptions) {
+  const config = grokConfig();
+  if (!config.apiKey) throw new Error("Configure XAI_API_KEY no arquivo .env.local.");
   const timeout = Number(process.env.AI_REQUEST_TIMEOUT_MS || 240_000);
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-    timeout: Number.isFinite(timeout) ? timeout : 240_000,
-    maxRetries: 2,
-  });
+  const timeoutSignal = AbortSignal.timeout(Number.isFinite(timeout) ? timeout : 240_000);
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   try {
-    const response = await client.responses.create(
-      {
+    const response = await fetch("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         model: config.model,
         input: [
           { role: "system", content: instructions },
@@ -97,21 +71,20 @@ export async function generateText({
         ],
         reasoning: { effort: "medium" },
         store: false,
-      },
-      { signal },
-    );
-
-    const text = response.output_text?.trim();
-    if (!text) {
-      throw new Error("A IA retornou uma resposta vazia.");
-    }
-
+      }),
+      signal: requestSignal,
+    });
+    if (!response.ok) throw new Error(apiError(response.status));
+    const text = outputText(await response.json());
+    if (!text) throw new Error("O Grok retornou uma resposta vazia.");
     return { text, model: config.model };
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Configure ")) {
+    if (error instanceof Error && (error.message.includes("Configure ") || error.message.includes("Grok"))) {
       throw error;
     }
-    throw new Error(errorMessage(error));
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("A geração foi cancelada ou excedeu o tempo limite.");
+    }
+    throw new Error("Não foi possível concluir a geração com o Grok. Tente novamente.");
   }
 }
-

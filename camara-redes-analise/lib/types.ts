@@ -1,5 +1,3 @@
-export type AiProvider = "xai" | "openai";
-
 export type AnalysisSectionId =
   | "classification"
   | "qualitative"
@@ -68,11 +66,11 @@ export interface AnalysisSectionResult extends AnalysisSectionDefinition {
   originalContent: string;
   status: GenerationStatus;
   edited: boolean;
+  validated: boolean;
   error?: string;
 }
 
 export interface AnalyzeRequest {
-  provider: AiProvider;
   sectionId: AnalysisSectionId;
   project: ProjectContext;
   workbook: Pick<
@@ -88,6 +86,14 @@ export interface AnalyzeRequest {
   >;
   previousResults: Partial<Record<AnalysisSectionId, string>>;
 }
+
+export const REPORT_SECTION_IDS: AnalysisSectionId[] = [
+  "whatTheySay",
+  "featuredChannel",
+  "whoMobilized",
+  "whatMobilized",
+  "executiveSummary",
+];
 
 export const SECTION_DEFINITIONS: AnalysisSectionDefinition[] = [
   {

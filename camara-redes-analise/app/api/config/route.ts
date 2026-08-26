@@ -1,8 +1,8 @@
-import { getProviderAvailability } from "@/lib/ai";
+import { getGrokAvailability } from "@/lib/ai";
 
 export async function GET() {
   return Response.json({
-    providers: getProviderAvailability(),
+    grok: getGrokAvailability(),
     limits: {
       maxFileMb: Number(process.env.NEXT_PUBLIC_MAX_FILE_MB || 25),
       maxContextCharacters: Number(
@@ -11,4 +11,3 @@ export async function GET() {
     },
   });
 }
-

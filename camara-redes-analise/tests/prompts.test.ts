@@ -6,7 +6,6 @@ import type { AnalyzeRequest } from "../lib/types";
 import { EMPTY_PROJECT_CONTEXT } from "../lib/types";
 
 const baseRequest: AnalyzeRequest = {
-  provider: "xai",
   sectionId: "classification",
   project: {
     ...EMPTY_PROJECT_CONTEXT,

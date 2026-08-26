@@ -18,11 +18,11 @@ Os dados das células são tratados como evidência não confiável. Uma regra d
 
 ## Integração de IA
 
-`lib/ai.ts` cria o cliente somente no servidor. A OpenAI usa o endpoint padrão. A xAI usa o mesmo SDK com `baseURL=https://api.x.ai/v1`. O provedor e o modelo são selecionáveis sem mudar os prompts.
+`lib/ai.ts` cria o cliente somente no servidor e aponta exclusivamente para `https://api.x.ai/v1`. A chave usada é `XAI_API_KEY` e não há seleção de provedor na interface.
 
 ## Geração do PDF
 
-O PDF é criado no backend com `pdf-lib`. O algoritmo controla margens, quebra de linhas, criação de páginas, prevenção de título isolado, rodapé e numeração. A imagem de cabeçalho pode ser carregada na interface ou definida como `public/report-header.png`.
+O PDF é criado no backend com `pdf-lib`. O algoritmo controla margens, quebra de linhas e criação de páginas, mas não adiciona capa, cabeçalho, rodapé ou paginação. Apenas as cinco respostas principais validadas entram no documento.
 
 O documento recebe somente os títulos das sete seções e as respostas confirmadas. Prompts, formulário, dados brutos, histórico e detalhes técnicos não entram no arquivo.
 

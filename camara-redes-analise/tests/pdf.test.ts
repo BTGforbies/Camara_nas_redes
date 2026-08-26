@@ -5,19 +5,14 @@ import { PDFDocument } from "pdf-lib";
 
 import { generateReportPdf, reportFileName } from "../lib/pdf";
 
-const transparentPng =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-
-test("gera PDF A4 paginado com imagem e conteúdo longo", async () => {
+test("gera PDF A4 cru e paginado com conteúdo longo", async () => {
   const content = Array.from(
     { length: 120 },
     (_, index) => `Linha ${index + 1}: análise objetiva com acentuação e informação validada.`,
   ).join("\n");
   const bytes = await generateReportPdf({
-    projectName: "PL 123/2026 - Proteção à infância",
-    headerImage: transparentPng,
     sections: [
-      { title: "Classificação, contagens e ranking", content },
+      { title: "O que dizem", content },
       { title: "Resumo executivo", content: "Síntese final dos resultados." },
     ],
   });
@@ -31,6 +26,5 @@ test("gera PDF A4 paginado com imagem e conteúdo longo", async () => {
 
 test("normaliza o nome do arquivo", () => {
   const name = reportFileName("PL 123/2026: Educação & Saúde", new Date("2026-08-25T12:00:00Z"));
-  assert.equal(name, "Analise_PL_123_2026_Educacao_Saude_2026-08-25.pdf");
+  assert.equal(name, "Respostas_PL_123_2026_Educacao_Saude_2026-08-25.pdf");
 });
-

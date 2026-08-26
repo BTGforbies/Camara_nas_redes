@@ -27,7 +27,6 @@ const projectSchema = z.object({
 });
 
 const requestSchema = z.object({
-  provider: z.enum(["xai", "openai"]),
   sectionId: z.enum(sectionIds),
   project: projectSchema,
   workbook: z.object({
@@ -67,7 +66,6 @@ export async function POST(request: Request) {
 
     const prompt = buildSectionPrompt(body);
     let generated = await generateText({
-      provider: body.provider,
       instructions: prompt.instructions,
       input: prompt.input,
       signal: request.signal,
@@ -78,7 +76,6 @@ export async function POST(request: Request) {
       generated.text.length > prompt.definition.characterLimit
     ) {
       generated = await generateText({
-        provider: body.provider,
         instructions: prompt.instructions,
         input: buildCharacterLimitRepairPrompt(
           generated.text,

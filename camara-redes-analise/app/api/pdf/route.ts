@@ -3,13 +3,7 @@ import { z } from "zod";
 import { generateReportPdf, reportFileName } from "@/lib/pdf";
 
 const pdfSchema = z.object({
-  documentTitle: z.string().trim().max(240).optional(),
   projectName: z.string().trim().min(1).max(240),
-  headerImage: z
-    .string()
-    .max(8_000_000)
-    .regex(/^data:image\/(png|jpeg);base64,/)
-    .optional(),
   sections: z
     .array(
       z.object({
@@ -18,7 +12,7 @@ const pdfSchema = z.object({
       }),
     )
     .min(1)
-    .max(20),
+    .max(5),
 });
 
 export async function POST(request: Request) {
