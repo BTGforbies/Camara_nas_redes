@@ -31,11 +31,11 @@ cp .env.example .env.local
 npm run dev -- --host 0.0.0.0
 ```
 
-Configure somente a chave da xAI dentro de `.env.local` antes de iniciar. O servidor de desenvolvimento aceita endereços privados do Codespaces e não depende da pasta oculta `.openai` para carregar.
+Configure somente `GROQ_API_KEY` dentro de `.env.local` antes de iniciar. O servidor de desenvolvimento aceita endereços privados do Codespaces e não depende da pasta oculta `.openai` para carregar.
 
 ## Revisão e PDF
 
-- O sistema usa apenas Grok/xAI e não mostra seleção de API na interface.
+- O sistema usa a Groq Cloud no backend e não mostra seleção de API na interface.
 - As cinco respostas principais aparecem na etapa 3.
-- Cada resposta pode ser ajustada por um chat lateral com o Grok e precisa ser validada.
+- Cada resposta pode ser ajustada pelo chat lateral assistido e precisa ser validada.
 - O PDF recebe somente essas respostas, sem métricas, capa, cabeçalho ou rodapé.

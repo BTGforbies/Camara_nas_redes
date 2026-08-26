@@ -1,4 +1,4 @@
-export interface GrokAvailability {
+export interface AiAvailability {
   configured: boolean;
   model: string;
 }
@@ -9,21 +9,24 @@ interface GenerateTextOptions {
   signal?: AbortSignal;
 }
 
-function grokConfig() {
+class ProviderError extends Error {}
+
+function aiConfig() {
   return {
-    apiKey: process.env.XAI_API_KEY,
-    model: process.env.XAI_MODEL || "grok-4.6",
+    apiKey: process.env.GROQ_API_KEY,
+    model: process.env.GROQ_MODEL || "groq/compound",
   };
 }
 
-export function getGrokAvailability(): GrokAvailability {
-  const config = grokConfig();
+export function getAiAvailability(): AiAvailability {
+  const config = aiConfig();
   return { configured: Boolean(config.apiKey), model: config.model };
 }
 
 function sanitizeUpstreamMessage(value: string) {
   return value
     .replace(/xai-[A-Za-z0-9_-]+/g, "[chave ocultada]")
+    .replace(/gsk_[A-Za-z0-9_-]+/g, "[chave ocultada]")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500);
@@ -50,25 +53,30 @@ async function upstreamErrorMessage(response: Response) {
 
 function apiError(status: number, detail: string) {
   if (status === 401) {
-    return "A chave da API Grok foi recusada. Confira o arquivo .env.local.";
+    return "A chave da API de IA foi recusada. Confira GROQ_API_KEY no arquivo .env.local.";
   }
   if (status === 403) {
     return detail
-      ? `A xAI bloqueou o acesso: ${detail}`
-      : "A chave foi reconhecida, mas a equipe xAI não tem crédito ou permissão para usar a API.";
+      ? `O provedor de IA bloqueou o acesso: ${detail}`
+      : "A chave foi reconhecida, mas não possui permissão para utilizar o modelo configurado.";
   }
   if (status === 400) {
     return detail
-      ? `A xAI recusou a solicitação: ${detail}`
-      : "A xAI recusou o formato da solicitação.";
+      ? `O provedor de IA recusou a solicitação: ${detail}`
+      : "O provedor de IA recusou o formato da solicitação.";
   }
   if (status === 429) {
-    return "O limite da API Grok foi atingido. Aguarde alguns instantes e tente novamente.";
+    return "O limite gratuito da API foi atingido. Aguarde alguns instantes e tente novamente.";
   }
   if (status >= 500) {
-    return "O serviço Grok está indisponível no momento. Tente novamente.";
+    return "O serviço de IA está indisponível no momento. Tente novamente.";
   }
-  return detail || "Não foi possível concluir a geração com o Grok.";
+  return detail || "Não foi possível concluir a geração com a IA.";
+}
+
+function retryDelay(response: Response) {
+  const value = Number(response.headers.get("retry-after") || 0);
+  return Math.min(Math.max(Number.isFinite(value) ? value * 1_000 : 0, 1_000), 15_000);
 }
 
 function outputText(payload: unknown) {
@@ -87,48 +95,53 @@ function outputText(payload: unknown) {
 }
 
 export async function generateText({ instructions, input, signal }: GenerateTextOptions) {
-  const config = grokConfig();
-  if (!config.apiKey) throw new Error("Configure XAI_API_KEY no arquivo .env.local.");
+  const config = aiConfig();
+  if (!config.apiKey) {
+    throw new ProviderError("Configure GROQ_API_KEY no arquivo .env.local.");
+  }
   const timeout = Number(process.env.AI_REQUEST_TIMEOUT_MS || 240_000);
   const timeoutSignal = AbortSignal.timeout(Number.isFinite(timeout) ? timeout : 240_000);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   try {
-    const response = await fetch("https://api.x.ai/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        input: [
-          { role: "system", content: instructions },
-          { role: "user", content: input },
-        ],
-      }),
-      signal: requestSignal,
-    });
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetch("https://api.groq.com/openai/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: config.model,
+          input: [
+            { role: "system", content: instructions },
+            { role: "user", content: input },
+          ],
+          tool_choice: "none",
+        }),
+        signal: requestSignal,
+      });
+      if (response.status !== 429 || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelay(response)));
+    }
+    if (!response) throw new ProviderError("O provedor de IA não respondeu.");
     if (!response.ok) {
-      throw new Error(
+      throw new ProviderError(
         apiError(response.status, await upstreamErrorMessage(response)),
       );
     }
     const text = outputText(await response.json());
-    if (!text) throw new Error("O Grok retornou uma resposta vazia.");
+    if (!text) throw new ProviderError("A IA retornou uma resposta vazia.");
     return { text, model: config.model };
   } catch (error) {
+    if (error instanceof ProviderError) throw error;
     if (
       error instanceof Error &&
-      (error.message.includes("Configure ") ||
-        error.message.includes("Grok") ||
-        error.message.includes("A xAI"))
+      (error.name === "AbortError" || error.name === "TimeoutError")
     ) {
-      throw error;
-    }
-    if (error instanceof Error && error.name === "AbortError") {
       throw new Error("A geração foi cancelada ou excedeu o tempo limite.");
     }
-    throw new Error("Não foi possível concluir a geração com o Grok. Tente novamente.");
+    throw new Error("Não foi possível concluir a geração com a IA. Tente novamente.");
   }
 }

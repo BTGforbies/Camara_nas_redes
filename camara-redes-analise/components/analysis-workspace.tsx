@@ -543,11 +543,11 @@ export default function AnalysisWorkspace() {
                       <article key={section.id} className={`review-card validation-card ${section.validated ? "is-validated" : ""}`}>
                         <header>
                           <div className="review-index">{String(section.command).padStart(2, "0")}</div>
-                          <div className="review-title"><div><h3>{section.title}</h3>{section.edited && <span className="edited-badge">Ajustada com o Grok</span>}{section.validated && <span className="validated-badge"><Check size={12} /> Validada</span>}</div><p>{section.description}</p></div>
+                          <div className="review-title"><div><h3>{section.title}</h3>{section.edited && <span className="edited-badge">Resposta ajustada</span>}{section.validated && <span className="validated-badge"><Check size={12} /> Validada</span>}</div><p>{section.description}</p></div>
                         </header>
                         <div className="result-content"><pre>{section.content}</pre><footer><span>{section.content.length.toLocaleString("pt-BR")}{section.characterLimit ? ` / ${section.characterLimit}` : ""} caracteres</span></footer></div>
                         <div className="validation-actions">
-                          <button type="button" className="button button-secondary compact" onClick={() => openChat(section.id)} disabled={chatBusy}><MessageSquareText size={16} /> Ajustar com o Grok</button>
+                          <button type="button" className="button button-secondary compact" onClick={() => openChat(section.id)} disabled={chatBusy}><MessageSquareText size={16} /> Ajustar resposta</button>
                           <button type="button" className="button button-primary compact" onClick={() => validateSection(section.id)} disabled={section.validated || chatBusy}><CheckCircle2 size={16} /> {section.validated ? "Resposta validada" : "Validar resposta"}</button>
                         </div>
                       </article>
@@ -559,8 +559,8 @@ export default function AnalysisWorkspace() {
                       <header><div><span>Revisão assistida</span><h3>{activeChatSection.title}</h3></div><button type="button" onClick={() => setActiveChatId(null)} aria-label="Fechar conversa"><X size={18} /></button></header>
                       <div className="chat-current"><small>Versão em revisão</small><p>{activeChatSection.content}</p></div>
                       <div className="chat-messages" aria-live="polite">
-                        {activeMessages.length === 0 && <div className="chat-empty"><MessageSquareText size={22} /><strong>O que precisa mudar?</strong><p>Peça ao Grok para resumir, alterar o tom, dar mais clareza ou reorganizar a resposta. O texto não pode ser editado manualmente.</p></div>}
-                        {activeMessages.map((message, index) => <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}><span>{message.role === "user" ? "Você" : "Grok"}</span><p>{message.content}</p></div>)}
+                        {activeMessages.length === 0 && <div className="chat-empty"><MessageSquareText size={22} /><strong>O que precisa mudar?</strong><p>Peça para resumir, alterar o tom, dar mais clareza ou reorganizar a resposta. O texto não pode ser editado manualmente.</p></div>}
+                        {activeMessages.map((message, index) => <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}><span>{message.role === "user" ? "Você" : "Assistente"}</span><p>{message.content}</p></div>)}
                         {chatBusy && <div className="chat-thinking"><LoaderCircle className="spin" size={16} /> Preparando uma nova versão...</div>}
                         <div ref={chatEndRef} />
                       </div>

@@ -17,7 +17,7 @@ npm test
 
 ## Verificação manual recomendada com uma chave real
 
-1. Copiar `.env.example` para `.env.local` e configurar a chave da xAI.
+1. Copiar `.env.example` para `.env.local` e configurar `GROQ_API_KEY`.
 2. Iniciar com `npm run dev`.
 3. Enviar arquivos `.csv`, `.xlsx` e `.xls` reais.
 4. Conferir tabelas, registros e avisos reconhecidos.
@@ -30,4 +30,4 @@ npm test
 11. Repetir em largura de celular e com navegação por teclado.
 12. Testar chave inválida, limite da API e indisponibilidade para conferir as mensagens de erro.
 
-Chamadas reais ao Grok não são automatizadas, pois consumiriam créditos e poderiam gerar resultados variáveis.
+Chamadas reais ao provedor de IA não são automatizadas, pois consumiriam cota e poderiam gerar resultados variáveis.

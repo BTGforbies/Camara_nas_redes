@@ -22,7 +22,7 @@ const requestSchema = z.object({
   history: z.array(messageSchema).max(20).default([]),
 });
 
-function parseGrokResponse(value: string) {
+function parseAiResponse(value: string) {
   const cleaned = value
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -36,7 +36,7 @@ function parseGrokResponse(value: string) {
     typeof parsed.revisedContent !== "string" ||
     !parsed.revisedContent.trim()
   ) {
-    throw new Error("O Grok não retornou uma revisão válida.");
+    throw new Error("A IA não retornou uma revisão válida.");
   }
   return {
     message: parsed.message.trim(),
@@ -79,9 +79,9 @@ A versão revisada deve obedecer ao limite, preservar o sentido editorial da se�
       `.trim(),
       signal: request.signal,
     });
-    const result = parseGrokResponse(generated.text);
+    const result = parseAiResponse(generated.text);
     if (result.revisedContent.length > limit) {
-      throw new Error(`A revisão ultrapassou o limite de ${limit} caracteres. Peça ao Grok para resumir.`);
+      throw new Error(`A revisão ultrapassou o limite de ${limit} caracteres. Peça à IA para resumir.`);
     }
     return Response.json({ ...result, model: generated.model });
   } catch (error) {

@@ -1,8 +1,8 @@
-import { getGrokAvailability } from "@/lib/ai";
+import { getAiAvailability } from "@/lib/ai";
 
 export async function GET() {
   return Response.json({
-    grok: getGrokAvailability(),
+    ai: getAiAvailability(),
     limits: {
       maxFileMb: Number(process.env.NEXT_PUBLIC_MAX_FILE_MB || 25),
       maxContextCharacters: Number(
