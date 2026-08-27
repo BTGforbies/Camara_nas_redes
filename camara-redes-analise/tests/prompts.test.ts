@@ -77,3 +77,30 @@ test("resumo executivo recebe somente as dependências previstas e limite 400", 
   assert.match(prompt.input, /Não informe o nome ou o assunto da proposta/);
   assert.doesNotMatch(prompt.input, /<BASE_DE_POSTAGENS>/);
 });
+
+test("gera instrução parcial para um lote da base", () => {
+  const prompt = buildSectionPrompt({
+    ...baseRequest,
+    chunk: { index: 2, total: 4, aggregation: false },
+  });
+
+  assert.match(prompt.input, /LOTE 2 DE 4/);
+  assert.match(prompt.input, /resultado parcial conciso/);
+  assert.match(prompt.input, /Autores do lote/);
+});
+
+test("consolida os lotes antes dos comandos dependentes", () => {
+  const prompt = buildSectionPrompt({
+    ...baseRequest,
+    workbook: {
+      ...baseRequest.workbook,
+      contextText: "<RESULTADO_LOTE_1>Parcial</RESULTADO_LOTE_1>",
+    },
+    chunk: { index: 4, total: 4, aggregation: true },
+  });
+
+  assert.match(prompt.input, /RESULTADOS PARCIAIS DE 4 LOTES/);
+  assert.match(prompt.input, /Some as contagens/);
+  assert.match(prompt.input, /Mobilização por autor/);
+  assert.match(prompt.input, /Subsídios para análise qualitativa/);
+});

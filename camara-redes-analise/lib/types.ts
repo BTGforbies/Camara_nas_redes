@@ -85,6 +85,11 @@ export interface AnalyzeRequest {
     | "contextText"
   >;
   previousResults: Partial<Record<AnalysisSectionId, string>>;
+  chunk?: {
+    index: number;
+    total: number;
+    aggregation: boolean;
+  };
 }
 
 export const REPORT_SECTION_IDS: AnalysisSectionId[] = [

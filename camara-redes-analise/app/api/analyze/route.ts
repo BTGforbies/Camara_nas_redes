@@ -40,6 +40,13 @@ const requestSchema = z.object({
     contextText: z.string().min(1),
   }),
   previousResults: z.record(z.enum(sectionIds), z.string().max(120_000)),
+  chunk: z
+    .object({
+      index: z.number().int().positive(),
+      total: z.number().int().positive().max(100),
+      aggregation: z.boolean(),
+    })
+    .optional(),
 });
 
 export async function POST(request: Request) {

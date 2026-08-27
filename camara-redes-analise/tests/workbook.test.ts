@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 
 import {
   parseWorkbookArrayBuffer,
+  splitWorkbookContext,
   validateWorkbookBytes,
 } from "../lib/workbook";
 
@@ -111,4 +112,43 @@ test("bloqueia contexto acima do limite sem truncar", () => {
       ),
     /ultrapassa o limite configurado/,
   );
+});
+
+test("envia à IA somente as colunas relevantes quando elas são detectadas", () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Author", "Text", "Channel", "Engagement Score", "URL enorme", "Metadado"],
+      ["Ana", "Apoio a proposta", "Instagram", 10, "https://exemplo.test/postagem", "ignorar"],
+    ]),
+    "Dados",
+  );
+  const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const result = parseWorkbookArrayBuffer(bytes, {
+    fileName: "dados.xlsx",
+    fileSize: bytes.byteLength,
+  });
+
+  assert.match(result.contextText, /Author \| Text \| Channel \| Engagement Score/);
+  assert.doesNotMatch(result.contextText, /URL enorme|exemplo\.test|Metadado|ignorar/);
+});
+
+test("divide uma base grande em lotes e repete os cabeçalhos", () => {
+  const context = [
+    "PLANILHA: Dados",
+    "COLUNAS: Author | Text | Channel",
+    ...Array.from(
+      { length: 500 },
+      (_, index) => `Dados!${index + 2} | Autor ${index} | ${"texto ".repeat(20)} | Instagram`,
+    ),
+  ].join("\n");
+  const chunks = splitWorkbookContext(context, 12_000);
+
+  assert.ok(chunks.length > 1);
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 12_000);
+    assert.match(chunk, /^PLANILHA: Dados\nCOLUNAS: Author \| Text \| Channel/);
+  }
+  assert.match(chunks.at(-1) ?? "", /Dados!501/);
 });

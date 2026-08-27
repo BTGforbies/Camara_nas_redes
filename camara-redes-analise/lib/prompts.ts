@@ -60,6 +60,107 @@ function prior(
 }
 
 function classificationPrompt(request: AnalyzeRequest) {
+  if (request.chunk?.aggregation) {
+    return `
+${projectBlock(request)}
+
+RESULTADOS PARCIAIS DE ${request.chunk.total} LOTES
+${dataBlock(request)}
+
+Consolide os resultados parciais acima em uma única análise final. Cada bloco representa uma parte diferente da mesma base. Some as contagens, una termos equivalentes, recalcule os percentuais sobre o total de relevantes e não conte cabeçalhos ou totais gerais repetidos como postagens.
+
+REGRAS DA CONSOLIDAÇÃO:
+- Preserve o total bruto informado em CONTROLE DO ARQUIVO e explique qualquer diferença aritmética.
+- Repetidos, offtopic e linhas corrompidas não entram no ranking de relevantes.
+- Una sinônimos e variações sob um termo estável de até 31 caracteres.
+- Some autores e canais que apareçam em mais de um lote.
+- Para cada argumento final, escolha somente uma postagem representativa que já esteja transcrita nos resultados parciais. Não invente nem reescreva.
+- Não mostre a divisão em lotes na resposta final.
+
+FORMATO OBRIGATÓRIO, EM MARKDOWN:
+
+### Totais
+- Total bruto de postagens do arquivo: N
+- Total de postagens analisadas: N
+- Total offtopic: N
+- Total repetidos: N
+- Total relevantes: N
+- Total de linhas corrompidas: N
+
+### Ranking para gráfico
+| Termo | Ocorrências | Percentual % |
+|---|---:|---:|
+Inclua TOP 5 + "Outras opiniões sobre o assunto".
+
+### Participação por canal
+| Canal | Ocorrências | Percentual % |
+|---|---:|---:|
+
+### Mobilização por autor
+| Autor | Postagens | Pontos de engajamento |
+|---|---:|---:|
+Inclua os autores de maior destaque e uma conclusão sobre concentração ou distribuição.
+
+### Subsídios para análise qualitativa
+Para cada item do TOP 5 + "Outras opiniões sobre o assunto", informe: termo final, contagem consolidada, explicação breve do argumento e uma postagem original representativa sem o nome do autor.
+
+### Argumentos fora do assunto
+Resumo por tipo de conteúdo e frequência.
+
+### Transparência
+- Critérios de agrupamento
+- Sinônimos unificados
+- Critérios de marcação de repetidos
+- Critérios de interpretação de emojis
+- Exemplos resumidos de offtopic classificados
+
+Faça uma verificação aritmética antes de responder e explique qualquer diferença sem inventar dados.
+`.trim();
+  }
+
+  if (request.chunk && request.chunk.total > 1) {
+    return `
+${projectBlock(request)}
+
+LOTE ${request.chunk.index} DE ${request.chunk.total}
+${dataBlock(request)}
+
+Este é um lote da base completa. Analise todas as postagens deste lote, uma a uma, sem reduzir por amostragem. Produza um resultado parcial conciso para ser somado aos demais lotes posteriormente.
+
+REGRAS:
+- Texto idêntico do mesmo autor marcado como REPETIDO não entra nos relevantes.
+- Classifique cada registro como RELEVANTE, OFFTOPIC, REPETIDO ou linha corrompida.
+- Para relevantes, classifique a posição como POSITIVO, NEGATIVO ou NEUTRO.
+- Extraia até dois termos de argumento por postagem relevante; una sinônimos dentro deste lote e limite cada termo a 31 caracteres.
+- Emojis claros de aprovação indicam apoio direto; reprovação clara indica rejeição direta; símbolos ofensivos, violentos, irônicos ou ambíguos são OFFTOPIC.
+- Some pontos de engajamento por autor quando a coluna existir.
+- Não reproduza a base inteira.
+
+FORMATO OBRIGATÓRIO, EM MARKDOWN:
+
+### Totais do lote
+- Registros recebidos: N
+- Offtopic: N
+- Repetidos: N
+- Relevantes: N
+- Linhas corrompidas: N
+
+### Termos do lote
+Liste até 15 termos com contagem e posição predominante. Para cada termo, inclua uma postagem original representativa sem nome do autor.
+
+### Canais do lote
+Liste todos os canais encontrados e suas ocorrências.
+
+### Autores do lote
+Liste até 20 autores com maior número de postagens, soma de pontos de engajamento e quantidade de postagens.
+
+### Offtopic do lote
+Resuma os tipos e frequências.
+
+Mantenha a resposta abaixo de 8.000 caracteres. Não apresente percentuais globais, pois eles serão calculados na consolidação.
+`.trim();
+  }
+
   return `
 ${projectBlock(request)}
 
@@ -126,6 +227,14 @@ Inclua TOP 5 + "Outras opiniões sobre o assunto". Garanta que cada termo tenha 
 | Canal | Ocorrências | Percentual % |
 |---|---:|---:|
 
+### Mobilização por autor
+| Autor | Postagens | Pontos de engajamento |
+|---|---:|---:|
+Inclua os autores de maior destaque e uma conclusão sobre concentração ou distribuição.
+
+### Subsídios para análise qualitativa
+Para cada item do TOP 5 + "Outras opiniões sobre o assunto", informe uma explicação breve do argumento e uma postagem original representativa, sem o nome do autor. Não invente nem reescreva.
+
 ### Argumentos fora do assunto
 Resumo por tipo de conteúdo e frequência, sem reproduzir postagens individuais.
 
@@ -146,8 +255,6 @@ ${projectBlock(request)}
 
 RESULTADO DO COMANDO 1
 ${prior(request, "classification", "Classificação")}
-
-${dataBlock(request)}
 
 Produza a análise qualitativa dos argumentos presentes no TOP 5 + "Outras opiniões sobre o assunto". Não inclua uma coluna ou subtítulo de posição. Considere a frequência e escreva para a tomada de decisão da alta direção da Câmara dos Deputados.
 
@@ -193,12 +300,10 @@ function whoMobilizedPrompt(request: AnalyzeRequest) {
   return `
 ${projectBlock(request)}
 
-${dataBlock(request)}
-
 CONTAGENS JÁ APURADAS
 ${prior(request, "classification", "Classificação")}
 
-Com base nas colunas de autor e pontos de engajamento da base, produza somente o texto do bloco "Quem mobilizou", sem título, com até 400 caracteres com espaços. Explique quais autores tiveram maior soma de pontos de engajamento e quantidade de postagens e se o debate ficou concentrado em poucos perfis ou distribuído. Use linguagem simples, direta, imparcial, frases curtas e nenhum gerúndio. Não invente nomes ou valores quando as colunas não estiverem disponíveis.
+Com base na seção "Mobilização por autor" já apurada no comando 1, produza somente o texto do bloco "Quem mobilizou", sem título, com até 400 caracteres com espaços. Explique quais autores tiveram maior soma de pontos de engajamento e quantidade de postagens e se o debate ficou concentrado em poucos perfis ou distribuído. Use linguagem simples, direta, imparcial, frases curtas e nenhum gerúndio. Não invente nomes ou valores quando as colunas não estiverem disponíveis.
 `.trim();
 }
 

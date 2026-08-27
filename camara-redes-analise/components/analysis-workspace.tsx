@@ -36,14 +36,17 @@ import {
   SECTION_DEFINITIONS,
 } from "@/lib/types";
 import {
+  DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
   DEFAULT_MAX_CONTEXT_CHARACTERS,
   DEFAULT_MAX_FILE_SIZE_BYTES,
   parseWorkbookArrayBuffer,
+  splitWorkbookContext,
 } from "@/lib/workbook";
 
 interface RuntimeLimits {
   maxFileMb: number;
   maxContextCharacters: number;
+  maxChunkCharacters: number;
 }
 
 interface ChatMessage {
@@ -102,9 +105,11 @@ export default function AnalysisWorkspace() {
   const [runtimeLimits, setRuntimeLimits] = useState<RuntimeLimits>({
     maxFileMb: DEFAULT_MAX_FILE_SIZE_BYTES / 1024 / 1024,
     maxContextCharacters: DEFAULT_MAX_CONTEXT_CHARACTERS,
+    maxChunkCharacters: DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
   });
   const [sections, setSections] = useState<AnalysisSectionResult[]>(newSectionResults);
   const [busy, setBusy] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [generationError, setGenerationError] = useState("");
   const [activeChatId, setActiveChatId] = useState<AnalysisSectionId | null>(null);
   const [chatMessages, setChatMessages] = useState<Partial<Record<AnalysisSectionId, ChatMessage[]>>>({});
@@ -223,28 +228,80 @@ export default function AnalysisWorkspace() {
     previousResults: Partial<Record<AnalysisSectionId, string>>,
   ) => {
     if (!workbook) throw new Error("Anexe um arquivo CSV ou Excel antes de continuar.");
-    const response = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sectionId,
-        project,
-        workbook: {
-          fileName: workbook.fileName,
-          totalSheets: workbook.totalSheets,
-          usableSheets: workbook.usableSheets,
-          recordCount: workbook.recordCount,
-          duplicateCount: workbook.duplicateCount,
-          corruptedCount: workbook.corruptedCount,
-          warnings: workbook.warnings,
-          contextText: workbook.contextText,
-        },
-        previousResults,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Não foi possível gerar esta resposta.");
-    return String(payload.content || "").trim();
+
+    const postRequest = async (
+      contextText: string,
+      chunk?: { index: number; total: number; aggregation: boolean },
+    ) => {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sectionId,
+          project,
+          workbook: {
+            fileName: workbook.fileName,
+            totalSheets: workbook.totalSheets,
+            usableSheets: workbook.usableSheets,
+            recordCount: workbook.recordCount,
+            duplicateCount: workbook.duplicateCount,
+            corruptedCount: workbook.corruptedCount,
+            warnings: workbook.warnings,
+            contextText,
+          },
+          previousResults,
+          chunk,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error(
+            "Um dos lotes ainda ficou grande demais. O sistema preservou o arquivo; tente novamente após atualizar a aplicação.",
+          );
+        }
+        throw new Error(payload.error || "Não foi possível gerar esta resposta.");
+      }
+      return String(payload.content || "").trim();
+    };
+
+    if (sectionId !== "classification") {
+      return postRequest("Base consolidada no comando 1.");
+    }
+
+    const chunks = splitWorkbookContext(
+      workbook.contextText,
+      runtimeLimits.maxChunkCharacters,
+    );
+    if (chunks.length === 1) return postRequest(chunks[0]);
+
+    const partialResults: string[] = [];
+    try {
+      for (let index = 0; index < chunks.length; index += 1) {
+        setBatchProgress({ current: index + 1, total: chunks.length });
+        partialResults.push(
+          await postRequest(chunks[index], {
+            index: index + 1,
+            total: chunks.length,
+            aggregation: false,
+          }),
+        );
+      }
+      setBatchProgress({ current: chunks.length, total: chunks.length });
+      const combined = partialResults
+        .map(
+          (content, index) =>
+            `<RESULTADO_LOTE_${index + 1}>\n${content}\n</RESULTADO_LOTE_${index + 1}>`,
+        )
+        .join("\n\n");
+      return postRequest(combined, {
+        index: chunks.length,
+        total: chunks.length,
+        aggregation: true,
+      });
+    } finally {
+      setBatchProgress(null);
+    }
   };
 
   const runSequence = async (reset: boolean) => {
@@ -533,7 +590,7 @@ export default function AnalysisWorkspace() {
                 <div><span className="section-kicker">03 · Geração e validação</span><h2 id="generation-title">Revise as respostas antes de avançar</h2><p>Os cálculos internos orientam a análise, mas somente as cinco respostas principais aparecem aqui e seguem para o PDF.</p></div>
                 <div className="progress-number"><strong>{busy ? completedSections : validatedCount}</strong><span>{busy ? "/ 7 comandos" : "/ 5 validadas"}</span></div>
               </div>
-              {busy && <><div className="generation-progress" aria-label={`${completedSections} de 7 comandos concluídos`}><span style={{ width: `${(completedSections / 7) * 100}%` }} /></div><div className="command-list">{sections.map((section) => <article key={section.id} className={`command-row ${section.status}`}><div className="command-status-icon">{section.status === "done" && <CheckCircle2 size={20} />}{section.status === "running" && <LoaderCircle className="spin" size={20} />}{section.status === "error" && <AlertCircle size={20} />}{section.status === "idle" && <span className="idle-dot" />}</div><div className="command-copy"><span>Comando {section.command}</span><strong>{section.title}</strong><small>{section.status === "running" ? "Analisando os dados..." : section.status === "done" ? "Concluído" : section.status === "error" ? section.error : "Aguardando"}</small></div></article>)}</div></>}
+              {busy && <><div className="generation-progress" aria-label={`${completedSections} de 7 comandos concluídos`}><span style={{ width: `${(completedSections / 7) * 100}%` }} /></div><div className="command-list">{sections.map((section) => <article key={section.id} className={`command-row ${section.status}`}><div className="command-status-icon">{section.status === "done" && <CheckCircle2 size={20} />}{section.status === "running" && <LoaderCircle className="spin" size={20} />}{section.status === "error" && <AlertCircle size={20} />}{section.status === "idle" && <span className="idle-dot" />}</div><div className="command-copy"><span>Comando {section.command}</span><strong>{section.title}</strong><small>{section.status === "running" ? batchProgress && section.id === "classification" ? `Analisando lote ${batchProgress.current} de ${batchProgress.total}...` : "Analisando os dados..." : section.status === "done" ? "Concluído" : section.status === "error" ? section.error : "Aguardando"}</small></div></article>)}</div></>}
               {generationError && <div className="alert alert-error" role="alert"><AlertCircle size={20} /><div><strong>A geração foi interrompida</strong><span>{generationError} Os dados continuam salvos.</span></div></div>}
 
               {!busy && allSectionsReady && (

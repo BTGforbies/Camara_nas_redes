@@ -8,6 +8,7 @@ import type {
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_CONTEXT_CHARACTERS = 2_000_000;
+export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 220_000;
 
 const AUTHOR_ALIASES = [
   "author",
@@ -230,23 +231,104 @@ function annotateRows(sheets: WorkbookSheet[]) {
 
 function makeContextText(sheets: WorkbookSheet[]) {
   const blocks = sheets.map((sheet) => {
+    const detectedHeaders = [
+      sheet.detectedColumns.author,
+      sheet.detectedColumns.text,
+      sheet.detectedColumns.channel,
+      sheet.detectedColumns.engagement,
+    ].filter((header): header is string => Boolean(header));
+    const selectedHeaders = sheet.detectedColumns.text
+      ? [...new Set(detectedHeaders)]
+      : sheet.headers;
+    const selectedIndexes = selectedHeaders.map((header) =>
+      sheet.headers.indexOf(header),
+    );
     const lines = sheet.rows.map((row) => {
       const flags = [
         row.duplicateOf ? `REPETIDO DE ${row.duplicateOf}` : "",
         row.corrupted ? "POSSÍVEL LINHA CORROMPIDA" : "",
       ].filter(Boolean);
-      const values = row.values.map((value) => value.replace(/\|/g, "\\|"));
+      const values = selectedIndexes.map((index) =>
+        (row.values[index] ?? "").replace(/\|/g, "\\|"),
+      );
       return `${sheet.name}!${row.rowNumber}${flags.length ? ` [${flags.join("; ")}]` : ""} | ${values.join(" | ")}`;
     });
 
     return [
       `PLANILHA: ${sheet.name}`,
-      `COLUNAS: ${sheet.headers.join(" | ")}`,
+      `COLUNAS: ${selectedHeaders.join(" | ")}`,
       ...lines,
     ].join("\n");
   });
 
   return blocks.join("\n\n");
+}
+
+export function splitWorkbookContext(
+  contextText: string,
+  maxChunkCharacters = DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
+) {
+  if (!Number.isFinite(maxChunkCharacters) || maxChunkCharacters < 10_000) {
+    throw new Error("O limite de cada lote da análise é inválido.");
+  }
+  if (contextText.length <= maxChunkCharacters) return [contextText];
+
+  const chunks: string[] = [];
+  const current: string[] = [];
+  let activeHeaders: string[] = [];
+  let currentLength = 0;
+
+  const pushLine = (line: string) => {
+    current.push(line);
+    currentLength += line.length + (current.length > 1 ? 1 : 0);
+  };
+  const flush = () => {
+    const value = current.join("\n").trim();
+    if (value) chunks.push(value);
+    current.length = 0;
+    currentLength = 0;
+  };
+
+  for (const line of contextText.split("\n")) {
+    if (line.startsWith("PLANILHA: ")) {
+      activeHeaders = [line];
+    } else if (line.startsWith("COLUNAS: ")) {
+      activeHeaders = [activeHeaders[0], line].filter(Boolean);
+    }
+
+    const continuationHeaders =
+      current.length === 0 &&
+      !line.startsWith("PLANILHA: ") &&
+      !line.startsWith("COLUNAS: ")
+        ? activeHeaders
+        : [];
+    const continuationLength = continuationHeaders.reduce(
+      (total, header) => total + header.length + 1,
+      0,
+    );
+    const projected =
+      currentLength +
+      continuationLength +
+      line.length +
+      (current.length || continuationHeaders.length ? 1 : 0);
+
+    if (projected > maxChunkCharacters && current.length) {
+      flush();
+      for (const header of activeHeaders) pushLine(header);
+    } else {
+      for (const header of continuationHeaders) pushLine(header);
+    }
+
+    if (currentLength + line.length + (current.length ? 1 : 0) > maxChunkCharacters) {
+      throw new Error(
+        "Uma postagem isolada é grande demais para a análise. Reduza apenas essa célula antes de tentar novamente.",
+      );
+    }
+    if (!current.length || current[current.length - 1] !== line) pushLine(line);
+  }
+
+  flush();
+  return chunks;
 }
 
 export function parseWorkbookArrayBuffer(

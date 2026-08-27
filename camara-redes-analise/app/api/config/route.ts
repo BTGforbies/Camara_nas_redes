@@ -8,6 +8,9 @@ export async function GET() {
       maxContextCharacters: Number(
         process.env.NEXT_PUBLIC_MAX_CONTEXT_CHARS || 2_000_000,
       ),
+      maxChunkCharacters: Number(
+        process.env.NEXT_PUBLIC_AI_CHUNK_CHARS || 220_000,
+      ),
     },
   });
 }
