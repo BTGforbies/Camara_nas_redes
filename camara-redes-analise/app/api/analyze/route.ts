@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { generateText, ProviderError } from "@/lib/ai";
+import { normalizeQualitativeRanking } from "@/lib/analysis-format";
 import {
   buildCharacterLimitRepairPrompt,
   buildSectionPrompt,
@@ -93,9 +94,14 @@ export async function POST(request: Request) {
       });
     }
 
+    const content =
+      body.sectionId === "qualitative"
+        ? normalizeQualitativeRanking(generated.text)
+        : generated.text;
+
     return Response.json({
-      content: generated.text,
-      characterCount: generated.text.length,
+      content,
+      characterCount: content.length,
       model: generated.model,
     });
   } catch (error) {

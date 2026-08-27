@@ -61,6 +61,21 @@ test("impede executar comando dependente sem resposta anterior", () => {
   );
 });
 
+test("exige títulos públicos em caixa alta no ranking", () => {
+  const prompt = buildSectionPrompt({
+    ...baseRequest,
+    sectionId: "qualitative",
+    previousResults: { classification: "Tabela consolidada" },
+  });
+
+  assert.match(prompt.input, /sempre em CAIXA ALTA/);
+  assert.match(prompt.input, /Não inclua códigos, aliases/);
+  assert.match(
+    prompt.input,
+    /\*\*1 - NOME DO ARGUMENTO \| N ocorrências \(N%\)\*\*/,
+  );
+});
+
 test("resumo executivo recebe somente as dependências previstas e limite 400", () => {
   const request: AnalyzeRequest = {
     ...baseRequest,

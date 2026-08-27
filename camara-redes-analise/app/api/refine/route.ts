@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { generateText } from "@/lib/ai";
+import { normalizeQualitativeRanking } from "@/lib/analysis-format";
 import { ANALYSIS_SYSTEM_INSTRUCTIONS } from "@/lib/prompts";
 import { REPORT_SECTION_IDS, SECTION_DEFINITIONS } from "@/lib/types";
 
@@ -81,10 +82,14 @@ A versão revisada deve obedecer ao limite, preservar o sentido editorial da se�
       signal: request.signal,
     });
     const result = parseAiResponse(generated.text);
-    if (result.revisedContent.length > limit) {
+    const revisedContent =
+      body.sectionId === "qualitative"
+        ? normalizeQualitativeRanking(result.revisedContent)
+        : result.revisedContent;
+    if (revisedContent.length > limit) {
       throw new Error(`A revisão ultrapassou o limite de ${limit} caracteres. Peça à IA para resumir.`);
     }
-    return Response.json({ ...result, model: generated.model });
+    return Response.json({ ...result, revisedContent, model: generated.model });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json({ error: "A solicitação de revisão está incompleta." }, { status: 400 });

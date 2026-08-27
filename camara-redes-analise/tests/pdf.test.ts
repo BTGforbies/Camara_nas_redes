@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { PDFDocument } from "pdf-lib";
 
+import { pdfSchema } from "../app/api/pdf/route";
 import { generateReportPdf, reportFileName } from "../lib/pdf";
 
 test("gera PDF A4 cru e paginado com conteúdo longo", async () => {
@@ -27,4 +28,16 @@ test("gera PDF A4 cru e paginado com conteúdo longo", async () => {
 test("normaliza o nome do arquivo", () => {
   const name = reportFileName("PL 123/2026: Educação & Saúde", new Date("2026-08-25T12:00:00Z"));
   assert.equal(name, "Respostas_PL_123_2026_Educacao_Saude_2026-08-25.pdf");
+});
+
+test("aceita ranking e cinco análises no PDF", () => {
+  assert.doesNotThrow(() =>
+    pdfSchema.parse({
+      projectName: "PL 123/2026",
+      sections: Array.from({ length: 6 }, (_, index) => ({
+        title: `Seção ${index + 1}`,
+        content: `Conteúdo validado ${index + 1}`,
+      })),
+    }),
+  );
 });

@@ -1,8 +1,9 @@
 import { z } from "zod";
 
+import { normalizeQualitativeRanking } from "@/lib/analysis-format";
 import { generateReportPdf, reportFileName } from "@/lib/pdf";
 
-const pdfSchema = z.object({
+export const pdfSchema = z.object({
   projectName: z.string().trim().min(1).max(240),
   sections: z
     .array(
@@ -12,13 +13,18 @@ const pdfSchema = z.object({
       }),
     )
     .min(1)
-    .max(5),
+    .max(6),
 });
 
 export async function POST(request: Request) {
   try {
     const input = pdfSchema.parse(await request.json());
-    const bytes = await generateReportPdf(input);
+    const bytes = await generateReportPdf({
+      sections: input.sections.map((section) => ({
+        ...section,
+        content: normalizeQualitativeRanking(section.content),
+      })),
+    });
     const fileName = reportFileName(input.projectName);
 
     const body = new Uint8Array(bytes.byteLength);

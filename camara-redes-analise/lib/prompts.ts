@@ -239,6 +239,8 @@ REGRAS:
 - Para cada item, a explicação deve ter no máximo 350 caracteres com espaços.
 - Inclua uma postagem real e representativa, sem nome do autor. Não invente nem reescreva a postagem.
 - Não crie um sexto texto para "Outras opiniões sobre o assunto"; essa linha permanece apenas na tabela automática.
+- Escreva o NOME DO ARGUMENTO sempre em CAIXA ALTA.
+- Use somente o nome público e legível do argumento. Não inclua códigos, aliases, rótulos internos, CamelCase ou variações separadas por barra.
 
 FORMATO EXATO PARA CADA ITEM:
 **1 - NOME DO ARGUMENTO | N ocorrências (N%)**
