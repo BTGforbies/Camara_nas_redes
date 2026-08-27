@@ -2,7 +2,7 @@ export function groupByCharacterLimit(
   values: string[],
   maxCharacters: number,
 ) {
-  if (!Number.isFinite(maxCharacters) || maxCharacters < 10_000) {
+  if (!Number.isFinite(maxCharacters) || maxCharacters < 2_000) {
     throw new Error("O limite de consolidação da análise é inválido.");
   }
 

@@ -62,33 +62,20 @@ function prior(
 function classificationPrompt(request: AnalyzeRequest) {
   if (request.chunk?.aggregation && !request.chunk.finalAggregation) {
     return `
-RESULTADOS PARCIAIS PARA CONSOLIDAÇÃO INTERMEDIÁRIA
+CONSOLIDAÇÃO COMPACTA DE LOTES
 ${dataBlock(request)}
 
-Una somente os blocos recebidos acima em um novo resultado parcial. Eles representam partes diferentes da base. Some as contagens, canais, autores e pontos de engajamento; una termos equivalentes; preserve apenas postagens representativas que já apareçam nos blocos. Não use o total geral do arquivo nesta etapa e não calcule percentuais globais.
+Some os blocos sem calcular percentuais. Una termos equivalentes, preserve uma postagem original por termo e some canais, autores e pontos de engajamento.
 
-FORMATO OBRIGATÓRIO, EM MARKDOWN:
+Retorne somente este formato compacto:
+TOTAIS|analisadas=N|offtopic=N|repetidas=N|corrompidas=N|relevantes=N
+TERMO|nome|N|POSITIVO/NEGATIVO/NEUTRO|postagem original
+OUTROS_TERMOS|N
+CANAL|nome|N
+AUTOR|nome|postagens=N|engajamento=N
+OFFTOPIC|tipo|N
 
-### Totais parciais consolidados
-- Registros recebidos nos blocos: N
-- Offtopic: N
-- Repetidos: N
-- Relevantes: N
-- Linhas corrompidas: N
-
-### Termos parciais consolidados
-Liste até 15 termos com contagem e posição predominante. Para cada termo, mantenha uma postagem original representativa sem nome do autor.
-
-### Canais parciais consolidados
-Liste todos os canais recebidos e some suas ocorrências.
-
-### Autores parciais consolidados
-Liste até 20 autores com maior quantidade de postagens e soma de pontos de engajamento.
-
-### Offtopic parcial consolidado
-Resuma os tipos e frequências.
-
-Mantenha a resposta abaixo de 4.000 caracteres. Não mencione esta consolidação intermediária.
+Use no máximo 10 linhas TERMO, 10 AUTOR e 5 OFFTOPIC. Resposta abaixo de 1.800 caracteres.
 `.trim();
   }
 
@@ -96,100 +83,56 @@ Mantenha a resposta abaixo de 4.000 caracteres. Não mencione esta consolidaçã
     return `
 ${projectBlock(request)}
 
-RESULTADOS PARCIAIS DE ${request.chunk.total} LOTES
+RESULTADOS COMPACTOS DOS LOTES
 ${dataBlock(request)}
 
-Consolide os resultados parciais acima em uma única análise final. Cada bloco representa uma parte diferente da mesma base. Some as contagens, una termos equivalentes, recalcule os percentuais sobre o total de relevantes e não conte cabeçalhos ou totais gerais repetidos como postagens.
+Some as contagens, una termos equivalentes e recalcule os percentuais usando o total de RELEVANTES. Repetidas, OFFTOPIC e corrompidas não entram nessa base. Preserve as postagens originais recebidas. Não invente dados.
 
-REGRAS DA CONSOLIDAÇÃO:
-- Preserve o total bruto informado em CONTROLE DO ARQUIVO e explique qualquer diferença aritmética.
-- Repetidos, offtopic e linhas corrompidas não entram no ranking de relevantes.
-- Una sinônimos e variações sob um termo estável de até 31 caracteres.
-- Some autores e canais que apareçam em mais de um lote.
-- Para cada argumento final, escolha somente uma postagem representativa que já esteja transcrita nos resultados parciais. Não invente nem reescreva.
-- Não mostre a divisão em lotes na resposta final.
+Retorne exatamente duas tabelas visíveis:
 
-FORMATO OBRIGATÓRIO, EM MARKDOWN:
+### Métricas
+| Métrica | Valor |
+|---|---:|
+| Total bruto de postagens do arquivo | ${request.workbook.recordCount} |
+| Total de postagens analisadas | ${request.workbook.recordCount} |
+| Total OFFTOPIC | N |
+| Total REPETIDO | ${request.workbook.duplicateCount} |
+| Total CORROMPIDA (sinalizada à parte) | ${request.workbook.corruptedCount} |
+| **Total RELEVANTES (base de cálculo)** | **N** |
 
-### Totais
-- Total bruto de postagens do arquivo: N
-- Total de postagens analisadas: N
-- Total offtopic: N
-- Total repetidos: N
-- Total relevantes: N
-- Total de linhas corrompidas: N
-
-### Ranking para gráfico
-| Termo | Ocorrências | Percentual % |
+### Termos
+| Termo | Ocorrências | Percentual (%) |
 |---|---:|---:|
-Inclua TOP 5 + "Outras opiniões sobre o assunto".
+Inclua TOP 5 + **Outras opiniões sobre o assunto**. Some em "Outras" todas as ocorrências dos termos que ficaram fora do TOP 5, inclusive OUTROS_TERMOS recebidos dos lotes.
 
-### Participação por canal
-| Canal | Ocorrências | Percentual % |
-|---|---:|---:|
-
-### Mobilização por autor
-| Autor | Postagens | Pontos de engajamento |
-|---|---:|---:|
-Inclua os autores de maior destaque e uma conclusão sobre concentração ou distribuição.
-
-### Subsídios para análise qualitativa
-Para cada item do TOP 5 + "Outras opiniões sobre o assunto", informe: termo final, contagem consolidada, explicação breve do argumento e uma postagem original representativa sem o nome do autor.
-
-### Argumentos fora do assunto
-Resumo por tipo de conteúdo e frequência.
-
-### Transparência
-- Critérios de agrupamento
-- Sinônimos unificados
-- Critérios de marcação de repetidos
-- Critérios de interpretação de emojis
-- Exemplos resumidos de offtopic classificados
-
-Faça uma verificação aritmética antes de responder e explique qualquer diferença sem inventar dados.
+Depois das tabelas, inclua este bloco de apoio dentro do comentário:
+<!-- DADOS_INTERNOS
+TERMOS: nome | contagem | percentual | posição | postagem original representativa
+CANAIS: nome | ocorrências
+AUTORES: nome | postagens | pontos de engajamento
+OFFTOPIC: tipo | frequência
+-->
 `.trim();
   }
 
-  if (request.chunk && request.chunk.total > 1) {
+  if (request.chunk && !request.chunk.aggregation) {
     return `
-${projectBlock(request)}
-
-LOTE ${request.chunk.index} DE ${request.chunk.total}
+ASSUNTO: ${request.project.subject}
+CONTEXTO: ${request.project.context}
+LOTE ${request.chunk.index}/${request.chunk.total}
 ${dataBlock(request)}
 
-Este é um lote da base completa. Analise todas as postagens deste lote, uma a uma, sem reduzir por amostragem. Produza um resultado parcial conciso para ser somado aos demais lotes posteriormente.
+Classifique cada linha como RELEVANTE, OFFTOPIC, REPETIDA ou CORROMPIDA. REPETIDA já vem marcada quando detectada. Para cada relevante, extraia no máximo dois termos de até 31 caracteres e posição POSITIVO, NEGATIVO ou NEUTRO. Una sinônimos. Emoji claro de aprovação ou reprovação conta como apoio ou rejeição; símbolo ambíguo ou ofensivo é OFFTOPIC. Some canais, autores e engajamento.
 
-REGRAS:
-- Texto idêntico do mesmo autor marcado como REPETIDO não entra nos relevantes.
-- Classifique cada registro como RELEVANTE, OFFTOPIC, REPETIDO ou linha corrompida.
-- Para relevantes, classifique a posição como POSITIVO, NEGATIVO ou NEUTRO.
-- Extraia até dois termos de argumento por postagem relevante; una sinônimos dentro deste lote e limite cada termo a 31 caracteres.
-- Emojis claros de aprovação indicam apoio direto; reprovação clara indica rejeição direta; símbolos ofensivos, violentos, irônicos ou ambíguos são OFFTOPIC.
-- Some pontos de engajamento por autor quando a coluna existir.
-- Não reproduza a base inteira.
+Retorne somente:
+TOTAIS|analisadas=N|offtopic=N|repetidas=N|corrompidas=N|relevantes=N
+TERMO|nome|N|POSITIVO/NEGATIVO/NEUTRO|postagem original
+OUTROS_TERMOS|N
+CANAL|nome|N
+AUTOR|nome|postagens=N|engajamento=N
+OFFTOPIC|tipo|N
 
-FORMATO OBRIGATÓRIO, EM MARKDOWN:
-
-### Totais do lote
-- Registros recebidos: N
-- Offtopic: N
-- Repetidos: N
-- Relevantes: N
-- Linhas corrompidas: N
-
-### Termos do lote
-Liste até 15 termos com contagem e posição predominante. Para cada termo, inclua uma postagem original representativa sem nome do autor.
-
-### Canais do lote
-Liste todos os canais encontrados e suas ocorrências.
-
-### Autores do lote
-Liste até 20 autores com maior número de postagens, soma de pontos de engajamento e quantidade de postagens.
-
-### Offtopic do lote
-Resuma os tipos e frequências.
-
-Mantenha a resposta abaixo de 4.000 caracteres. Não apresente percentuais globais, pois eles serão calculados na consolidação.
+Use no máximo 10 linhas TERMO, 10 AUTOR e 5 OFFTOPIC. Resposta abaixo de 1.800 caracteres.
 `.trim();
   }
 
@@ -288,14 +231,14 @@ ${projectBlock(request)}
 RESULTADO DO COMANDO 1
 ${prior(request, "classification", "Classificação")}
 
-Produza a análise qualitativa dos argumentos presentes no TOP 5 + "Outras opiniões sobre o assunto". Não inclua uma coluna ou subtítulo de posição. Considere a frequência e escreva para a tomada de decisão da alta direção da Câmara dos Deputados.
+Produza o ranking detalhado dos argumentos presentes no TOP 5. Não inclua uma coluna ou subtítulo de posição. Considere a frequência e escreva para a tomada de decisão da alta direção da Câmara dos Deputados.
 
 REGRAS:
 - Linguagem simples, direta, imparcial e sem gerúndio.
 - Frases curtas, sem palavras complexas e sem deslocamento desnecessário de períodos.
 - Para cada item, a explicação deve ter no máximo 350 caracteres com espaços.
 - Inclua uma postagem real e representativa, sem nome do autor. Não invente nem reescreva a postagem.
-- Detalhe também "Outras opiniões sobre o assunto" no mesmo formato.
+- Não crie um sexto texto para "Outras opiniões sobre o assunto"; essa linha permanece apenas na tabela automática.
 
 FORMATO EXATO PARA CADA ITEM:
 **1 - NOME DO ARGUMENTO | N ocorrências (N%)**

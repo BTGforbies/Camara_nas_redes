@@ -11,6 +11,7 @@ const messageSchema = z.object({
 
 const requestSchema = z.object({
   sectionId: z.enum([
+    "qualitative",
     "whatTheySay",
     "featuredChannel",
     "whoMobilized",

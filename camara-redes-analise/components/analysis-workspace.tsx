@@ -22,7 +22,15 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { groupByCharacterLimit, wrapPartialResults } from "@/lib/batching";
 import type {
@@ -86,7 +94,7 @@ function safeInitialChunkLimit(configured: number) {
 function splitRejectedChunk(contextText: string) {
   if (contextText.length <= MIN_ANALYSIS_CHUNK_CHARACTERS) {
     throw new Error(
-      "Mesmo o menor lote permitido foi recusado pela API. Os dados continuam salvos; aguarde um instante e tente novamente.",
+      "A API recusou até o menor lote automático. Aguarde um instante e tente novamente.",
     );
   }
   const smallerLimit = Math.max(
@@ -96,10 +104,67 @@ function splitRejectedChunk(contextText: string) {
   const smallerChunks = splitWorkbookContext(contextText, smallerLimit);
   if (smallerChunks.length < 2) {
     throw new Error(
-      "Não foi possível reduzir automaticamente o lote recusado. Os dados continuam salvos.",
+      "Não foi possível reduzir automaticamente o lote recusado.",
     );
   }
   return smallerChunks;
+}
+
+function visibleAnalysisContent(content: string) {
+  return content
+    .replace(/<!--\s*DADOS_INTERNOS[\s\S]*?(?:-->|$)/gi, "")
+    .trim();
+}
+
+function inlineTableValue(value: string) {
+  const trimmed = value.trim();
+  const bold = trimmed.match(/^\*\*(.+)\*\*$/);
+  return bold ? <strong>{bold[1]}</strong> : trimmed;
+}
+
+function StructuredResult({ content }: { content: string }) {
+  const lines = visibleAnalysisContent(content).split("\n");
+  const elements: ReactNode[] = [];
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      elements.push(<h4 key={`heading-${index}`}>{line.slice(4)}</h4>);
+      index += 1;
+      continue;
+    }
+    if (line.startsWith("|")) {
+      const tableLines: string[] = [];
+      while (index < lines.length && lines[index].trim().startsWith("|")) {
+        tableLines.push(lines[index].trim());
+        index += 1;
+      }
+      const rows = tableLines.map((row) =>
+        row.slice(1, -1).split("|").map((cell) => cell.trim()),
+      );
+      const headers = rows[0] ?? [];
+      const body = rows.slice(1).filter((row) =>
+        !row.every((cell) => /^:?-{3,}:?$/.test(cell)),
+      );
+      elements.push(
+        <div className="automatic-table-scroll" key={`table-${index}`}>
+          <table className="automatic-table">
+            <thead><tr>{headers.map((cell, cellIndex) => <th key={cellIndex}>{inlineTableValue(cell)}</th>)}</tr></thead>
+            <tbody>{body.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{inlineTableValue(cell)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    elements.push(<p key={`text-${index}`}>{line}</p>);
+    index += 1;
+  }
+
+  return <div className="structured-result">{elements}</div>;
 }
 
 function newSectionResults(): AnalysisSectionResult[] {
@@ -176,6 +241,7 @@ export default function AnalysisWorkspace() {
     reportSections.length === REPORT_SECTION_IDS.length && reportSections.every((section) => section.validated);
   const completedSections = sections.filter((section) => section.status === "done").length;
   const validatedCount = reportSections.filter((section) => section.validated).length;
+  const automaticSection = sections.find((section) => section.id === "classification");
   const activeChatSection = sections.find((section) => section.id === activeChatId);
   const activeMessages = useMemo(
     () => (activeChatId ? chatMessages[activeChatId] ?? [] : []),
@@ -319,15 +385,6 @@ export default function AnalysisWorkspace() {
       workbook.contextText,
       initialLimit,
     );
-    if (chunks.length === 1) {
-      try {
-        return await postRequest(chunks[0]);
-      } catch (error) {
-        if (!isRequestTooLarge(error)) throw error;
-        chunks.splice(0, 1, ...splitRejectedChunk(chunks[0]));
-      }
-    }
-
     const partialResults: string[] = [];
     try {
       for (let index = 0; index < chunks.length;) {
@@ -379,7 +436,7 @@ export default function AnalysisWorkspace() {
             );
             if (smallerLimit === aggregationLimit) {
               throw new Error(
-                "A consolidação mínima foi recusada pela API. Os dados continuam salvos; tente novamente em instantes.",
+                "A consolidação mínima foi recusada pela API. Tente novamente em instantes.",
               );
             }
             aggregationLimit = smallerLimit;
@@ -407,7 +464,7 @@ export default function AnalysisWorkspace() {
             );
             if (smallerLimit === aggregationLimit) {
               throw new Error(
-                "A consolidação mínima foi recusada pela API. Os dados continuam salvos; tente novamente em instantes.",
+                "A consolidação mínima foi recusada pela API. Tente novamente em instantes.",
               );
             }
             aggregationLimit = smallerLimit;
@@ -713,8 +770,8 @@ export default function AnalysisWorkspace() {
           {currentStep === 3 && (
             <section className="stage generation-stage" aria-labelledby="generation-title">
               <div className="stage-heading">
-                <div><span className="section-kicker">03 · Geração e validação</span><h2 id="generation-title">Revise as respostas antes de avançar</h2><p>Os cálculos internos orientam a análise, mas somente as cinco respostas principais aparecem aqui e seguem para o PDF.</p></div>
-                <div className="progress-number"><strong>{busy ? completedSections : validatedCount}</strong><span>{busy ? "/ 7 comandos" : "/ 5 validadas"}</span></div>
+                <div><span className="section-kicker">03 · Geração e validação</span><h2 id="generation-title">Revise as respostas antes de avançar</h2><p>As duas tabelas aparecem automaticamente. A validação começa no ranking dos argumentos e continua nas cinco análises finais.</p></div>
+                <div className="progress-number"><strong>{busy ? completedSections : validatedCount}</strong><span>{busy ? "/ 7 comandos" : "/ 6 validadas"}</span></div>
               </div>
               {busy && <><div className="generation-progress" aria-label={`${completedSections} de 7 comandos concluídos`}><span style={{ width: `${(completedSections / 7) * 100}%` }} /></div><div className="command-list">{sections.map((section) => <article key={section.id} className={`command-row ${section.status}`}><div className="command-status-icon">{section.status === "done" && <CheckCircle2 size={20} />}{section.status === "running" && <LoaderCircle className="spin" size={20} />}{section.status === "error" && <AlertCircle size={20} />}{section.status === "idle" && <span className="idle-dot" />}</div><div className="command-copy"><span>Comando {section.command}</span><strong>{section.title}</strong><small>{section.status === "running" ? batchProgress && section.id === "classification" ? `Analisando lote ${batchProgress.current} de ${batchProgress.total}...` : "Analisando os dados..." : section.status === "done" ? "Concluído" : section.status === "error" ? section.error : "Aguardando"}</small></div></article>)}</div></>}
               {generationError && <div className="alert alert-error" role="alert"><AlertCircle size={20} /><div><strong>A geração foi interrompida</strong><span>{generationError} Os dados continuam salvos.</span></div></div>}
@@ -722,6 +779,15 @@ export default function AnalysisWorkspace() {
               {!busy && allSectionsReady && (
                 <div className={`review-with-chat ${activeChatId ? "chat-open" : ""}`}>
                   <div className="review-list">
+                    {automaticSection?.content && (
+                      <article className="review-card automatic-results-card">
+                        <header>
+                          <div className="review-index">01</div>
+                          <div className="review-title"><div><h3>{automaticSection.title}</h3><span className="automatic-badge"><Check size={12} /> Automáticas</span></div><p>Duas tabelas consolidadas pelo sistema. Não exigem conversa nem validação manual.</p></div>
+                        </header>
+                        <div className="result-content"><StructuredResult content={automaticSection.content} /></div>
+                      </article>
+                    )}
                     {reportSections.map((section) => (
                       <article key={section.id} className={`review-card validation-card ${section.validated ? "is-validated" : ""}`}>
                         <header>
@@ -766,16 +832,16 @@ export default function AnalysisWorkspace() {
             <section className="stage review-stage" aria-labelledby="review-title">
               <div className="stage-heading"><div><span className="section-kicker">04 · Conferência</span><h2 id="review-title">Respostas validadas</h2><p>Confira a versão definitiva. São exatamente estes textos que irão para o arquivo A4.</p></div></div>
               <div className="review-list compact-review">{reportSections.map((section) => <article key={section.id} className="review-card is-validated"><header><div className="review-index"><Check size={16} /></div><div className="review-title"><div><h3>{section.title}</h3><span className="validated-badge">Validada</span></div></div></header><div className="result-content"><pre>{section.content}</pre></div></article>)}</div>
-              <div className="confirmation-panel"><div className="confirmation-icon"><FileCheck2 size={24} /></div><div><h3>Versão pronta para o documento</h3><p>O PDF terá apenas os cinco títulos e as respostas validadas, sem métricas, capa, cabeçalho ou rodapé.</p></div><button type="button" className="button button-primary" onClick={confirmFinal}><CheckCircle2 size={18} /> Confirmar e ir para o PDF</button></div>
+              <div className="confirmation-panel"><div className="confirmation-icon"><FileCheck2 size={24} /></div><div><h3>Versão pronta para o documento</h3><p>O PDF terá o ranking e as cinco análises validadas, sem as tabelas automáticas, capa, cabeçalho ou rodapé.</p></div><button type="button" className="button button-primary" onClick={confirmFinal}><CheckCircle2 size={18} /> Confirmar e ir para o PDF</button></div>
               <div className="stage-actions"><button type="button" className="button button-secondary" onClick={() => setCurrentStep(3)}><ArrowLeft size={18} /> Voltar à validação</button></div>
             </section>
           )}
 
           {currentStep === 5 && (
             <section className="stage pdf-stage" aria-labelledby="pdf-title">
-              <div className="stage-heading"><div><span className="section-kicker">05 · Documento final</span><h2 id="pdf-title">Gere e baixe as respostas</h2><p>O documento A4 é cru: contém somente os títulos e as cinco respostas validadas.</p></div></div>
+              <div className="stage-heading"><div><span className="section-kicker">05 · Documento final</span><h2 id="pdf-title">Gere e baixe as respostas</h2><p>O documento A4 é cru: contém o ranking e as cinco análises validadas.</p></div></div>
               {!pdfUrl ? (
-                <div className="pdf-ready-panel"><div className="pdf-document-icon"><FileText size={34} /></div><div><span>Versão final confirmada</span><h3>{project.projectName}</h3><ul><li><Check size={16} /> 5 respostas principais</li><li><Check size={16} /> Formato A4</li><li><Check size={16} /> Sem métricas ou dados intermediários</li><li><Check size={16} /> Sem capa, cabeçalho ou rodapé</li></ul></div><button type="button" className="button button-primary button-large" disabled={pdfBusy} onClick={() => void generatePdf()}>{pdfBusy ? <LoaderCircle className="spin" size={20} /> : <FileText size={20} />}{pdfBusy ? "Criando PDF..." : "Gerar PDF"}</button></div>
+                <div className="pdf-ready-panel"><div className="pdf-document-icon"><FileText size={34} /></div><div><span>Versão final confirmada</span><h3>{project.projectName}</h3><ul><li><Check size={16} /> Ranking + 5 análises</li><li><Check size={16} /> Formato A4</li><li><Check size={16} /> Sem métricas ou dados intermediários</li><li><Check size={16} /> Sem capa, cabeçalho ou rodapé</li></ul></div><button type="button" className="button button-primary button-large" disabled={pdfBusy} onClick={() => void generatePdf()}>{pdfBusy ? <LoaderCircle className="spin" size={20} /> : <FileText size={20} />}{pdfBusy ? "Criando PDF..." : "Gerar PDF"}</button></div>
               ) : (
                 <div className="pdf-result"><div className="pdf-toolbar"><div><CheckCircle2 size={20} /><span><strong>PDF disponível</strong><small>{pdfName}</small></span></div><div><button type="button" className="button button-secondary compact" onClick={() => void generatePdf()} disabled={pdfBusy}><RefreshCw size={16} /> Nova versão</button><a className="button button-primary compact" href={pdfUrl} download={pdfName}><Download size={17} /> Baixar PDF</a></div></div><div className="pdf-preview"><div className="preview-label"><Eye size={16} /> Visualização do documento</div><iframe title="Prévia das respostas em PDF" src={pdfUrl} /></div></div>
               )}

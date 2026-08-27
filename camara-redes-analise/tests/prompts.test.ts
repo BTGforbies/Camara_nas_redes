@@ -89,9 +89,9 @@ test("gera instrução parcial para um lote da base", () => {
     },
   });
 
-  assert.match(prompt.input, /LOTE 2 DE 4/);
-  assert.match(prompt.input, /resultado parcial conciso/);
-  assert.match(prompt.input, /Autores do lote/);
+  assert.match(prompt.input, /LOTE 2\/4/);
+  assert.match(prompt.input, /Retorne somente:/);
+  assert.match(prompt.input, /AUTOR\|nome\|postagens=N\|engajamento=N/);
 });
 
 test("consolida os lotes antes dos comandos dependentes", () => {
@@ -109,10 +109,10 @@ test("consolida os lotes antes dos comandos dependentes", () => {
     },
   });
 
-  assert.match(prompt.input, /RESULTADOS PARCIAIS DE 4 LOTES/);
-  assert.match(prompt.input, /Some as contagens/);
-  assert.match(prompt.input, /Mobilização por autor/);
-  assert.match(prompt.input, /Subsídios para análise qualitativa/);
+  assert.match(prompt.input, /RESULTADOS COMPACTOS DOS LOTES/);
+  assert.match(prompt.input, /duas tabelas visíveis/);
+  assert.match(prompt.input, /### Métricas/);
+  assert.match(prompt.input, /DADOS_INTERNOS/);
 });
 
 test("faz consolidação intermediária sem usar percentuais globais", () => {
@@ -130,7 +130,7 @@ test("faz consolidação intermediária sem usar percentuais globais", () => {
     },
   });
 
-  assert.match(prompt.input, /CONSOLIDAÇÃO INTERMEDIÁRIA/);
-  assert.match(prompt.input, /Não use o total geral/);
-  assert.match(prompt.input, /Autores parciais consolidados/);
+  assert.match(prompt.input, /CONSOLIDAÇÃO COMPACTA/);
+  assert.match(prompt.input, /sem calcular percentuais/);
+  assert.match(prompt.input, /Resposta abaixo de 1\.800 caracteres/);
 });

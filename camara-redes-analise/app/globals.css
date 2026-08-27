@@ -393,6 +393,17 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .validation-card { border-color: var(--slate-200); transition: border-color 160ms ease, box-shadow 160ms ease; }
 .validation-card.is-validated { border-color: #a9ddc8; box-shadow: 0 8px 24px rgba(31, 128, 92, .08); }
 .validated-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; color: #187451; background: var(--green-soft); border-radius: 999px; font-size: 7px; font-style: normal; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.automatic-results-card { border-color: #b8dfea; background: linear-gradient(180deg, #f7fcfd 0, var(--white) 150px); }
+.automatic-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; color: var(--cyan-dark); background: var(--cyan-soft); border-radius: 999px; font-size: 7px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.structured-result { display: grid; gap: 10px; }
+.structured-result h4 { margin: 6px 0 0; color: var(--navy-950); font-size: 12px; }
+.structured-result p { margin: 0; color: var(--slate-600); font-size: 9px; line-height: 1.55; }
+.automatic-table-scroll { overflow-x: auto; border: 1px solid var(--slate-200); border-radius: 9px; }
+.automatic-table { width: 100%; border-collapse: collapse; color: #293747; background: var(--white); font-size: 9px; }
+.automatic-table th, .automatic-table td { padding: 9px 11px; border-bottom: 1px solid var(--slate-100); text-align: left; vertical-align: top; }
+.automatic-table th { color: var(--navy-950); background: var(--slate-50); font-size: 8px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.automatic-table th:not(:first-child), .automatic-table td:not(:first-child) { text-align: right; white-space: nowrap; }
+.automatic-table tbody tr:last-child td { border-bottom: 0; }
 .validation-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 18px; background: var(--slate-50); border-top: 1px solid var(--slate-100); }
 .generation-final-actions { display: flex; align-items: center; gap: 9px; }
 .chat-panel { position: sticky; top: 24px; overflow: hidden; display: flex; flex-direction: column; min-height: 590px; max-height: calc(100vh - 48px); background: var(--white); border: 1px solid var(--slate-200); border-radius: var(--radius-lg); box-shadow: 0 18px 48px rgba(8, 20, 38, .13); }

@@ -43,7 +43,7 @@ const requestSchema = z.object({
   chunk: z
     .object({
       index: z.number().int().positive(),
-      total: z.number().int().positive().max(500),
+      total: z.number().int().positive().max(1_000),
       aggregation: z.boolean(),
       finalAggregation: z.boolean(),
     })

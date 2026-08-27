@@ -94,6 +94,7 @@ export interface AnalyzeRequest {
 }
 
 export const REPORT_SECTION_IDS: AnalysisSectionId[] = [
+  "qualitative",
   "whatTheySay",
   "featuredChannel",
   "whoMobilized",
@@ -105,19 +106,19 @@ export const SECTION_DEFINITIONS: AnalysisSectionDefinition[] = [
   {
     id: "classification",
     command: 1,
-    title: "Classificação, contagens e ranking",
-    shortTitle: "Classificação",
+    title: "Tabelas automáticas",
+    shortTitle: "Tabelas",
     description:
-      "Separa postagens relevantes, offtopic e repetidas, calcula posições, termos, canais e transparência.",
+      "Consolida métricas e termos sem exigir validação manual.",
     dependencies: [],
   },
   {
     id: "qualitative",
     command: 2,
-    title: "Análise qualitativa dos argumentos",
-    shortTitle: "Argumentos",
+    title: "Ranking dos argumentos",
+    shortTitle: "Ranking",
     description:
-      "Explica os cinco argumentos mais frequentes e as demais opiniões com exemplos representativos.",
+      "Explica os cinco argumentos mais frequentes com exemplos representativos.",
     dependencies: ["classification"],
   },
   {
