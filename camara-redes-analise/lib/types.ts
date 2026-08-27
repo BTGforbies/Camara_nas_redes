@@ -89,6 +89,7 @@ export interface AnalyzeRequest {
     index: number;
     total: number;
     aggregation: boolean;
+    finalAggregation: boolean;
   };
 }
 

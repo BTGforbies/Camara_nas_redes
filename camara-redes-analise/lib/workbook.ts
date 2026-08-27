@@ -8,7 +8,7 @@ import type {
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_CONTEXT_CHARACTERS = 2_000_000;
-export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 220_000;
+export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 60_000;
 
 const AUTHOR_ALIASES = [
   "author",

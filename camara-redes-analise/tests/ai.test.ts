@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generateText } from "../lib/ai";
+import { generateText, ProviderError } from "../lib/ai";
 
 test("envia a geração ao Chat Completions da Groq", async () => {
   const originalFetch = globalThis.fetch;
@@ -55,6 +55,31 @@ test("orienta configurar GROQ_API_KEY quando a chave não existe", async () => {
       /Configure GROQ_API_KEY/,
     );
   } finally {
+    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = originalKey;
+  }
+});
+
+test("preserva o status 413 retornado pela Groq", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = "gsk_teste_local";
+  globalThis.fetch = async () =>
+    Response.json(
+      { error: { message: "Request Entity Too Large" } },
+      { status: 413 },
+    );
+
+  try {
+    await assert.rejects(
+      generateText({ instructions: "Teste", input: "Teste" }),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.status === 413 &&
+        /capacidade de contexto/.test(error.message),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.GROQ_API_KEY;
     else process.env.GROQ_API_KEY = originalKey;
   }

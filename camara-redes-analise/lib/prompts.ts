@@ -60,6 +60,38 @@ function prior(
 }
 
 function classificationPrompt(request: AnalyzeRequest) {
+  if (request.chunk?.aggregation && !request.chunk.finalAggregation) {
+    return `
+RESULTADOS PARCIAIS PARA CONSOLIDAÇÃO INTERMEDIÁRIA
+${dataBlock(request)}
+
+Una somente os blocos recebidos acima em um novo resultado parcial. Eles representam partes diferentes da base. Some as contagens, canais, autores e pontos de engajamento; una termos equivalentes; preserve apenas postagens representativas que já apareçam nos blocos. Não use o total geral do arquivo nesta etapa e não calcule percentuais globais.
+
+FORMATO OBRIGATÓRIO, EM MARKDOWN:
+
+### Totais parciais consolidados
+- Registros recebidos nos blocos: N
+- Offtopic: N
+- Repetidos: N
+- Relevantes: N
+- Linhas corrompidas: N
+
+### Termos parciais consolidados
+Liste até 15 termos com contagem e posição predominante. Para cada termo, mantenha uma postagem original representativa sem nome do autor.
+
+### Canais parciais consolidados
+Liste todos os canais recebidos e some suas ocorrências.
+
+### Autores parciais consolidados
+Liste até 20 autores com maior quantidade de postagens e soma de pontos de engajamento.
+
+### Offtopic parcial consolidado
+Resuma os tipos e frequências.
+
+Mantenha a resposta abaixo de 8.000 caracteres. Não mencione esta consolidação intermediária.
+`.trim();
+  }
+
   if (request.chunk?.aggregation) {
     return `
 ${projectBlock(request)}

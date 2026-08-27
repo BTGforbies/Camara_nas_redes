@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { generateText } from "@/lib/ai";
+import { generateText, ProviderError } from "@/lib/ai";
 import {
   buildCharacterLimitRepairPrompt,
   buildSectionPrompt,
@@ -45,6 +45,7 @@ const requestSchema = z.object({
       index: z.number().int().positive(),
       total: z.number().int().positive().max(100),
       aggregation: z.boolean(),
+      finalAggregation: z.boolean(),
     })
     .optional(),
 });
@@ -102,6 +103,12 @@ export async function POST(request: Request) {
       return Response.json(
         { error: "Os dados enviados estão incompletos ou inválidos." },
         { status: 400 },
+      );
+    }
+    if (error instanceof ProviderError) {
+      return Response.json(
+        { error: error.message },
+        { status: error.status },
       );
     }
     return Response.json(

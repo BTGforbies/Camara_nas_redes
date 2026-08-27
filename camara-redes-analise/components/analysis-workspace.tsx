@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { groupByCharacterLimit, wrapPartialResults } from "@/lib/batching";
 import type {
   AnalysisSectionId,
   AnalysisSectionResult,
@@ -231,7 +232,12 @@ export default function AnalysisWorkspace() {
 
     const postRequest = async (
       contextText: string,
-      chunk?: { index: number; total: number; aggregation: boolean },
+      chunk?: {
+        index: number;
+        total: number;
+        aggregation: boolean;
+        finalAggregation: boolean;
+      },
     ) => {
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -284,20 +290,50 @@ export default function AnalysisWorkspace() {
             index: index + 1,
             total: chunks.length,
             aggregation: false,
+            finalAggregation: false,
           }),
         );
       }
       setBatchProgress({ current: chunks.length, total: chunks.length });
-      const combined = partialResults
-        .map(
-          (content, index) =>
-            `<RESULTADO_LOTE_${index + 1}>\n${content}\n</RESULTADO_LOTE_${index + 1}>`,
-        )
-        .join("\n\n");
-      return postRequest(combined, {
-        index: chunks.length,
-        total: chunks.length,
+      let consolidationLevel = partialResults;
+      while (consolidationLevel.length > 1) {
+        const groups = groupByCharacterLimit(
+          consolidationLevel,
+          runtimeLimits.maxChunkCharacters,
+        );
+        if (groups.length === 1) {
+          return postRequest(wrapPartialResults(groups[0]), {
+            index: 1,
+            total: 1,
+            aggregation: true,
+            finalAggregation: true,
+          });
+        }
+        if (groups.length >= consolidationLevel.length) {
+          throw new Error(
+            "Os resultados parciais não puderam ser reduzidos com segurança.",
+          );
+        }
+
+        const nextLevel: string[] = [];
+        for (let index = 0; index < groups.length; index += 1) {
+          nextLevel.push(
+            await postRequest(wrapPartialResults(groups[index]), {
+              index: index + 1,
+              total: groups.length,
+              aggregation: true,
+              finalAggregation: false,
+            }),
+          );
+        }
+        consolidationLevel = nextLevel;
+      }
+
+      return postRequest(wrapPartialResults(consolidationLevel), {
+        index: 1,
+        total: 1,
         aggregation: true,
+        finalAggregation: true,
       });
     } finally {
       setBatchProgress(null);

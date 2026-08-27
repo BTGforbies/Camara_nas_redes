@@ -81,7 +81,12 @@ test("resumo executivo recebe somente as dependências previstas e limite 400", 
 test("gera instrução parcial para um lote da base", () => {
   const prompt = buildSectionPrompt({
     ...baseRequest,
-    chunk: { index: 2, total: 4, aggregation: false },
+    chunk: {
+      index: 2,
+      total: 4,
+      aggregation: false,
+      finalAggregation: false,
+    },
   });
 
   assert.match(prompt.input, /LOTE 2 DE 4/);
@@ -96,11 +101,36 @@ test("consolida os lotes antes dos comandos dependentes", () => {
       ...baseRequest.workbook,
       contextText: "<RESULTADO_LOTE_1>Parcial</RESULTADO_LOTE_1>",
     },
-    chunk: { index: 4, total: 4, aggregation: true },
+    chunk: {
+      index: 4,
+      total: 4,
+      aggregation: true,
+      finalAggregation: true,
+    },
   });
 
   assert.match(prompt.input, /RESULTADOS PARCIAIS DE 4 LOTES/);
   assert.match(prompt.input, /Some as contagens/);
   assert.match(prompt.input, /Mobilização por autor/);
   assert.match(prompt.input, /Subsídios para análise qualitativa/);
+});
+
+test("faz consolidação intermediária sem usar percentuais globais", () => {
+  const prompt = buildSectionPrompt({
+    ...baseRequest,
+    workbook: {
+      ...baseRequest.workbook,
+      contextText: "<RESULTADO_PARCIAL_1>Parcial</RESULTADO_PARCIAL_1>",
+    },
+    chunk: {
+      index: 1,
+      total: 3,
+      aggregation: true,
+      finalAggregation: false,
+    },
+  });
+
+  assert.match(prompt.input, /CONSOLIDAÇÃO INTERMEDIÁRIA/);
+  assert.match(prompt.input, /Não use o total geral/);
+  assert.match(prompt.input, /Autores parciais consolidados/);
 });

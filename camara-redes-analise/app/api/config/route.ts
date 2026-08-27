@@ -9,7 +9,7 @@ export async function GET() {
         process.env.NEXT_PUBLIC_MAX_CONTEXT_CHARS || 2_000_000,
       ),
       maxChunkCharacters: Number(
-        process.env.NEXT_PUBLIC_AI_CHUNK_CHARS || 220_000,
+        process.env.NEXT_PUBLIC_AI_CHUNK_CHARS || 60_000,
       ),
     },
   });

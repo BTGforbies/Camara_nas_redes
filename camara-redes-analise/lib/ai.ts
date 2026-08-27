@@ -9,7 +9,12 @@ interface GenerateTextOptions {
   signal?: AbortSignal;
 }
 
-class ProviderError extends Error {}
+export class ProviderError extends Error {
+  constructor(message: string, readonly status = 500) {
+    super(message);
+    this.name = "ProviderError";
+  }
+}
 
 function aiConfig() {
   return {
@@ -68,6 +73,9 @@ function apiError(status: number, detail: string) {
   if (status === 429) {
     return "O limite gratuito da API foi atingido. Aguarde alguns instantes e tente novamente.";
   }
+  if (status === 413) {
+    return "O lote ultrapassou a capacidade de contexto do modelo de IA.";
+  }
   if (status >= 500) {
     return "O serviço de IA está indisponível no momento. Tente novamente.";
   }
@@ -113,6 +121,9 @@ export async function generateText({ instructions, input, signal }: GenerateText
             { role: "user", content: input },
           ],
           temperature: 0.2,
+          max_completion_tokens: Number(
+            process.env.AI_MAX_COMPLETION_TOKENS || 3_000,
+          ),
         }),
         signal: requestSignal,
       });
@@ -123,6 +134,7 @@ export async function generateText({ instructions, input, signal }: GenerateText
     if (!response.ok) {
       throw new ProviderError(
         apiError(response.status, await upstreamErrorMessage(response)),
+        response.status,
       );
     }
     const text = outputText(await response.json());
