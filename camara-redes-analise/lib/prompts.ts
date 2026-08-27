@@ -88,7 +88,7 @@ Liste até 20 autores com maior quantidade de postagens e soma de pontos de enga
 ### Offtopic parcial consolidado
 Resuma os tipos e frequências.
 
-Mantenha a resposta abaixo de 8.000 caracteres. Não mencione esta consolidação intermediária.
+Mantenha a resposta abaixo de 4.000 caracteres. Não mencione esta consolidação intermediária.
 `.trim();
   }
 
@@ -189,7 +189,7 @@ Liste até 20 autores com maior número de postagens, soma de pontos de engajame
 ### Offtopic do lote
 Resuma os tipos e frequências.
 
-Mantenha a resposta abaixo de 8.000 caracteres. Não apresente percentuais globais, pois eles serão calculados na consolidação.
+Mantenha a resposta abaixo de 4.000 caracteres. Não apresente percentuais globais, pois eles serão calculados na consolidação.
 `.trim();
   }
 

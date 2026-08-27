@@ -40,6 +40,7 @@ import {
   DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
   DEFAULT_MAX_CONTEXT_CHARACTERS,
   DEFAULT_MAX_FILE_SIZE_BYTES,
+  MIN_ANALYSIS_CHUNK_CHARACTERS,
   parseWorkbookArrayBuffer,
   splitWorkbookContext,
 } from "@/lib/workbook";
@@ -62,6 +63,44 @@ const STEPS = [
   { number: 4, label: "Conferir respostas", short: "Conferência" },
   { number: 5, label: "Baixar PDF", short: "PDF" },
 ] as const;
+
+class AnalysisRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "AnalysisRequestError";
+  }
+}
+
+function isRequestTooLarge(error: unknown) {
+  return error instanceof AnalysisRequestError && error.status === 413;
+}
+
+function safeInitialChunkLimit(configured: number) {
+  if (!Number.isFinite(configured)) return DEFAULT_ANALYSIS_CHUNK_CHARACTERS;
+  return Math.min(
+    Math.max(configured, MIN_ANALYSIS_CHUNK_CHARACTERS),
+    DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
+  );
+}
+
+function splitRejectedChunk(contextText: string) {
+  if (contextText.length <= MIN_ANALYSIS_CHUNK_CHARACTERS) {
+    throw new Error(
+      "Mesmo o menor lote permitido foi recusado pela API. Os dados continuam salvos; aguarde um instante e tente novamente.",
+    );
+  }
+  const smallerLimit = Math.max(
+    MIN_ANALYSIS_CHUNK_CHARACTERS,
+    Math.floor(contextText.length / 2),
+  );
+  const smallerChunks = splitWorkbookContext(contextText, smallerLimit);
+  if (smallerChunks.length < 2) {
+    throw new Error(
+      "Não foi possível reduzir automaticamente o lote recusado. Os dados continuam salvos.",
+    );
+  }
+  return smallerChunks;
+}
 
 function newSectionResults(): AnalysisSectionResult[] {
   return SECTION_DEFINITIONS.map((definition) => ({
@@ -261,12 +300,10 @@ export default function AnalysisWorkspace() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (response.status === 413) {
-          throw new Error(
-            "Um dos lotes ainda ficou grande demais. O sistema preservou o arquivo; tente novamente após atualizar a aplicação.",
-          );
-        }
-        throw new Error(payload.error || "Não foi possível gerar esta resposta.");
+        throw new AnalysisRequestError(
+          payload.error || "Não foi possível gerar esta resposta.",
+          response.status,
+        );
       }
       return String(payload.content || "").trim();
     };
@@ -275,57 +312,110 @@ export default function AnalysisWorkspace() {
       return postRequest("Base consolidada no comando 1.");
     }
 
-    const chunks = splitWorkbookContext(
-      workbook.contextText,
+    const initialLimit = safeInitialChunkLimit(
       runtimeLimits.maxChunkCharacters,
     );
-    if (chunks.length === 1) return postRequest(chunks[0]);
+    const chunks = splitWorkbookContext(
+      workbook.contextText,
+      initialLimit,
+    );
+    if (chunks.length === 1) {
+      try {
+        return await postRequest(chunks[0]);
+      } catch (error) {
+        if (!isRequestTooLarge(error)) throw error;
+        chunks.splice(0, 1, ...splitRejectedChunk(chunks[0]));
+      }
+    }
 
     const partialResults: string[] = [];
     try {
-      for (let index = 0; index < chunks.length; index += 1) {
+      for (let index = 0; index < chunks.length;) {
         setBatchProgress({ current: index + 1, total: chunks.length });
-        partialResults.push(
-          await postRequest(chunks[index], {
-            index: index + 1,
-            total: chunks.length,
-            aggregation: false,
-            finalAggregation: false,
-          }),
-        );
+        try {
+          partialResults.push(
+            await postRequest(chunks[index], {
+              index: index + 1,
+              total: chunks.length,
+              aggregation: false,
+              finalAggregation: false,
+            }),
+          );
+          index += 1;
+        } catch (error) {
+          if (!isRequestTooLarge(error)) throw error;
+          const smallerChunks = splitRejectedChunk(chunks[index]);
+          chunks.splice(index, 1, ...smallerChunks);
+          setBatchProgress({ current: index + 1, total: chunks.length });
+        }
       }
       setBatchProgress({ current: chunks.length, total: chunks.length });
       let consolidationLevel = partialResults;
+      let aggregationLimit = initialLimit;
       while (consolidationLevel.length > 1) {
         const groups = groupByCharacterLimit(
           consolidationLevel,
-          runtimeLimits.maxChunkCharacters,
+          aggregationLimit,
         );
-        if (groups.length === 1) {
-          return postRequest(wrapPartialResults(groups[0]), {
-            index: 1,
-            total: 1,
-            aggregation: true,
-            finalAggregation: true,
-          });
-        }
         if (groups.length >= consolidationLevel.length) {
           throw new Error(
             "Os resultados parciais não puderam ser reduzidos com segurança.",
           );
         }
 
-        const nextLevel: string[] = [];
-        for (let index = 0; index < groups.length; index += 1) {
-          nextLevel.push(
-            await postRequest(wrapPartialResults(groups[index]), {
-              index: index + 1,
-              total: groups.length,
+        if (groups.length === 1) {
+          try {
+            return await postRequest(wrapPartialResults(groups[0]), {
+              index: 1,
+              total: 1,
               aggregation: true,
-              finalAggregation: false,
-            }),
-          );
+              finalAggregation: true,
+            });
+          } catch (error) {
+            if (!isRequestTooLarge(error)) throw error;
+            const smallerLimit = Math.max(
+              MIN_ANALYSIS_CHUNK_CHARACTERS,
+              Math.floor(aggregationLimit / 2),
+            );
+            if (smallerLimit === aggregationLimit) {
+              throw new Error(
+                "A consolidação mínima foi recusada pela API. Os dados continuam salvos; tente novamente em instantes.",
+              );
+            }
+            aggregationLimit = smallerLimit;
+            continue;
+          }
         }
+
+        const nextLevel: string[] = [];
+        let retryWithSmallerGroups = false;
+        for (let index = 0; index < groups.length; index += 1) {
+          try {
+            nextLevel.push(
+              await postRequest(wrapPartialResults(groups[index]), {
+                index: index + 1,
+                total: groups.length,
+                aggregation: true,
+                finalAggregation: false,
+              }),
+            );
+          } catch (error) {
+            if (!isRequestTooLarge(error)) throw error;
+            const smallerLimit = Math.max(
+              MIN_ANALYSIS_CHUNK_CHARACTERS,
+              Math.floor(aggregationLimit / 2),
+            );
+            if (smallerLimit === aggregationLimit) {
+              throw new Error(
+                "A consolidação mínima foi recusada pela API. Os dados continuam salvos; tente novamente em instantes.",
+              );
+            }
+            aggregationLimit = smallerLimit;
+            retryWithSmallerGroups = true;
+            break;
+          }
+        }
+        if (retryWithSmallerGroups) continue;
         consolidationLevel = nextLevel;
       }
 

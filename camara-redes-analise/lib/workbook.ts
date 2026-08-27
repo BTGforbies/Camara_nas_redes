@@ -8,7 +8,8 @@ import type {
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_CONTEXT_CHARACTERS = 2_000_000;
-export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 60_000;
+export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 24_000;
+export const MIN_ANALYSIS_CHUNK_CHARACTERS = 10_000;
 
 const AUTHOR_ALIASES = [
   "author",
@@ -268,7 +269,10 @@ export function splitWorkbookContext(
   contextText: string,
   maxChunkCharacters = DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
 ) {
-  if (!Number.isFinite(maxChunkCharacters) || maxChunkCharacters < 10_000) {
+  if (
+    !Number.isFinite(maxChunkCharacters) ||
+    maxChunkCharacters < MIN_ANALYSIS_CHUNK_CHARACTERS
+  ) {
     throw new Error("O limite de cada lote da análise é inválido.");
   }
   if (contextText.length <= maxChunkCharacters) return [contextText];
