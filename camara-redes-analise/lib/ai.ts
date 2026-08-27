@@ -82,16 +82,10 @@ function retryDelay(response: Response) {
 function outputText(payload: unknown) {
   if (!payload || typeof payload !== "object") return "";
   const response = payload as {
-    output_text?: unknown;
-    output?: Array<{ content?: Array<{ type?: string; text?: unknown }> }>;
+    choices?: Array<{ message?: { content?: unknown } }>;
   };
-  if (typeof response.output_text === "string") return response.output_text.trim();
-  return (response.output ?? [])
-    .flatMap((item) => item.content ?? [])
-    .filter((item) => item.type === "output_text" && typeof item.text === "string")
-    .map((item) => String(item.text))
-    .join("\n")
-    .trim();
+  const content = response.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content.trim() : "";
 }
 
 export async function generateText({ instructions, input, signal }: GenerateTextOptions) {
@@ -106,7 +100,7 @@ export async function generateText({ instructions, input, signal }: GenerateText
   try {
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      response = await fetch("https://api.groq.com/openai/v1/responses", {
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
@@ -114,11 +108,11 @@ export async function generateText({ instructions, input, signal }: GenerateText
         },
         body: JSON.stringify({
           model: config.model,
-          input: [
+          messages: [
             { role: "system", content: instructions },
             { role: "user", content: input },
           ],
-          tool_choice: "none",
+          temperature: 0.2,
         }),
         signal: requestSignal,
       });

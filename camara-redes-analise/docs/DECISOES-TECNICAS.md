@@ -18,7 +18,7 @@ Os dados das células são tratados como evidência não confiável. Uma regra d
 
 ## Integração de IA
 
-`lib/ai.ts` cria o cliente somente no servidor e aponta para `https://api.groq.com/openai/v1`. A chave usada é `GROQ_API_KEY` e não há seleção de provedor na interface. A aplicação repete temporariamente solicitações limitadas pela cota gratuita e não habilita ferramentas externas do modelo.
+`lib/ai.ts` cria o cliente somente no servidor e usa o endpoint estável de Chat Completions da Groq em `https://api.groq.com/openai/v1/chat/completions`. A chave usada é `GROQ_API_KEY` e não há seleção de provedor na interface. A aplicação repete temporariamente solicitações limitadas pela cota gratuita e não envia ferramentas externas ao modelo.
 
 ## Geração do PDF
 

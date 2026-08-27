@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     if (!definition) throw new Error("Seção de resposta inválida.");
 
     const history = body.history
-      .map((item) => `${item.role === "user" ? "USUÁRIO" : "GROK"}: ${item.content}`)
+      .map((item) => `${item.role === "user" ? "USUÁRIO" : "ASSISTENTE"}: ${item.content}`)
       .join("\n\n");
     const limit = definition.characterLimit ?? 4_000;
     const generated = await generateText({
