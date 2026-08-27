@@ -152,3 +152,28 @@ test("divide uma base grande em lotes e repete os cabeçalhos", () => {
   }
   assert.match(chunks.at(-1) ?? "", /Dados!501/);
 });
+
+test("compacta automaticamente uma célula isolada muito longa", () => {
+  const workbook = XLSX.utils.book_new();
+  const longText = `Início do argumento. ${"detalhe relevante ".repeat(500)}Fim do argumento.`;
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Author", "Text", "Channel"],
+      ["Ana", longText, "Facebook"],
+    ]),
+    "Dados",
+  );
+  const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const result = parseWorkbookArrayBuffer(bytes, {
+    fileName: "texto-longo.xlsx",
+    fileSize: bytes.byteLength,
+  });
+
+  assert.match(result.contextText, /Início do argumento/);
+  assert.match(result.contextText, /trecho compactado automaticamente/);
+  assert.match(result.contextText, /Fim do argumento/);
+  assert.match(result.warnings.join(" "), /compactadas automaticamente/);
+  assert.equal(result.sheets[0].rows[0].values[1], longText);
+  assert.doesNotThrow(() => splitWorkbookContext(result.contextText, 2_000));
+});

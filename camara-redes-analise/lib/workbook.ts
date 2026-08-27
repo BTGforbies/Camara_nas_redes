@@ -10,6 +10,8 @@ export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_CONTEXT_CHARACTERS = 2_000_000;
 export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 5_000;
 export const MIN_ANALYSIS_CHUNK_CHARACTERS = 2_000;
+const MAX_ANALYSIS_ROW_VALUE_CHARACTERS = 1_400;
+const COMPACTION_MARKER = " … [trecho compactado automaticamente] … ";
 
 const AUTHOR_ALIASES = [
   "author",
@@ -230,7 +232,41 @@ function annotateRows(sheets: WorkbookSheet[]) {
   return { duplicateCount, corruptedCount };
 }
 
+function compactTextForAnalysis(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  if (limit <= COMPACTION_MARKER.length + 2) {
+    return `${value.slice(0, Math.max(1, limit - 1))}…`;
+  }
+  const available = limit - COMPACTION_MARKER.length;
+  const startLength = Math.ceil(available * 0.7);
+  const endLength = available - startLength;
+  return `${value.slice(0, startLength).trimEnd()}${COMPACTION_MARKER}${value.slice(-endLength).trimStart()}`;
+}
+
+function compactRowValuesForAnalysis(values: string[]) {
+  const compacted = values.map((value) => value.replace(/\|/g, "\\|"));
+  let changed = false;
+
+  while (compacted.join(" | ").length > MAX_ANALYSIS_ROW_VALUE_CHARACTERS) {
+    const longestIndex = compacted.reduce(
+      (selected, value, index, all) =>
+        value.length > all[selected].length ? index : selected,
+      0,
+    );
+    const current = compacted[longestIndex];
+    const excess = compacted.join(" | ").length - MAX_ANALYSIS_ROW_VALUE_CHARACTERS;
+    const nextLimit = Math.max(8, current.length - excess - 20);
+    const next = compactTextForAnalysis(current, nextLimit);
+    if (next.length >= current.length) break;
+    compacted[longestIndex] = next;
+    changed = true;
+  }
+
+  return { values: compacted, changed };
+}
+
 function makeContextText(sheets: WorkbookSheet[]) {
+  let compactedRows = 0;
   const blocks = sheets.map((sheet) => {
     const detectedHeaders = [
       sheet.detectedColumns.author,
@@ -249,20 +285,26 @@ function makeContextText(sheets: WorkbookSheet[]) {
         row.duplicateOf ? `REPETIDO DE ${row.duplicateOf}` : "",
         row.corrupted ? "POSSÍVEL LINHA CORROMPIDA" : "",
       ].filter(Boolean);
-      const values = selectedIndexes.map((index) =>
-        (row.values[index] ?? "").replace(/\|/g, "\\|"),
+      const compacted = compactRowValuesForAnalysis(
+        selectedIndexes.map((index) => row.values[index] ?? ""),
       );
-      return `${sheet.name}!${row.rowNumber}${flags.length ? ` [${flags.join("; ")}]` : ""} | ${values.join(" | ")}`;
+      if (compacted.changed) compactedRows += 1;
+      return `${sheet.name}!${row.rowNumber}${flags.length ? ` [${flags.join("; ")}]` : ""} | ${compacted.values.join(" | ")}`;
     });
+
+    const headerLine = compactTextForAnalysis(
+      selectedHeaders.join(" | "),
+      MAX_ANALYSIS_ROW_VALUE_CHARACTERS,
+    );
 
     return [
       `PLANILHA: ${sheet.name}`,
-      `COLUNAS: ${selectedHeaders.join(" | ")}`,
+      `COLUNAS: ${headerLine}`,
       ...lines,
     ].join("\n");
   });
 
-  return blocks.join("\n\n");
+  return { contextText: blocks.join("\n\n"), compactedRows };
 }
 
 export function splitWorkbookContext(
@@ -410,7 +452,12 @@ export function parseWorkbookArrayBuffer(
     );
   }
 
-  const contextText = makeContextText(sheets);
+  const { contextText, compactedRows } = makeContextText(sheets);
+  if (compactedRows) {
+    warnings.push(
+      `${compactedRows} linha(s) continham células excepcionalmente longas e foram compactadas automaticamente apenas para a análise. O arquivo original não foi alterado.`,
+    );
+  }
   const maxContextCharacters =
     options?.maxContextCharacters ?? DEFAULT_MAX_CONTEXT_CHARACTERS;
   if (contextText.length > maxContextCharacters) {
