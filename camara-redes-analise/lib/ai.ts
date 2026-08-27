@@ -19,7 +19,9 @@ export class ProviderError extends Error {
 function aiConfig() {
   return {
     apiKey: process.env.GROQ_API_KEY,
-    model: process.env.GROQ_MODEL || "groq/compound",
+    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+    fallbackModel:
+      process.env.GROQ_FALLBACK_MODEL || "openai/gpt-oss-120b",
   };
 }
 
@@ -84,7 +86,10 @@ function apiError(status: number, detail: string) {
 
 function retryDelay(response: Response) {
   const value = Number(response.headers.get("retry-after") || 0);
-  return Math.min(Math.max(Number.isFinite(value) ? value * 1_000 : 0, 1_000), 15_000);
+  return Math.min(
+    Math.max(Number.isFinite(value) ? value * 1_000 : 0, 1_000),
+    60_000,
+  );
 }
 
 function outputText(payload: unknown) {
@@ -106,40 +111,61 @@ export async function generateText({ instructions, input, signal }: GenerateText
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   try {
-    let response: Response | undefined;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            { role: "system", content: instructions },
-            { role: "user", content: input },
-          ],
-          temperature: 0.2,
-          max_completion_tokens: Number(
-            process.env.AI_MAX_COMPLETION_TOKENS || 3_000,
-          ),
-        }),
-        signal: requestSignal,
-      });
-      if (response.status !== 429 || attempt === 2) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelay(response)));
+    const models = [config.model];
+    if (
+      config.model.startsWith("groq/compound") &&
+      config.fallbackModel !== config.model
+    ) {
+      models.push(config.fallbackModel);
     }
-    if (!response) throw new ProviderError("O provedor de IA não respondeu.");
-    if (!response.ok) {
-      throw new ProviderError(
-        apiError(response.status, await upstreamErrorMessage(response)),
-        response.status,
-      );
+
+    for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
+      const model = models[modelIndex];
+      let response: Response | undefined;
+
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: instructions },
+              { role: "user", content: input },
+            ],
+            temperature: 0.2,
+            max_completion_tokens: Number(
+              process.env.AI_MAX_COMPLETION_TOKENS || 3_000,
+            ),
+          }),
+          signal: requestSignal,
+        });
+        if (response.status !== 429 || attempt === 3) break;
+        const retryResponse = response;
+        await new Promise((resolve) =>
+          setTimeout(resolve, retryDelay(retryResponse)),
+        );
+      }
+
+      if (!response) throw new ProviderError("O provedor de IA não respondeu.");
+      if (response.status === 413 && modelIndex < models.length - 1) {
+        continue;
+      }
+      if (!response.ok) {
+        throw new ProviderError(
+          apiError(response.status, await upstreamErrorMessage(response)),
+          response.status,
+        );
+      }
+      const text = outputText(await response.json());
+      if (!text) throw new ProviderError("A IA retornou uma resposta vazia.");
+      return { text, model };
     }
-    const text = outputText(await response.json());
-    if (!text) throw new ProviderError("A IA retornou uma resposta vazia.");
-    return { text, model: config.model };
+
+    throw new ProviderError("O provedor de IA não respondeu.");
   } catch (error) {
     if (error instanceof ProviderError) throw error;
     if (

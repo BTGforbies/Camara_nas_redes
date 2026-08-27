@@ -26,7 +26,7 @@ Abra `.env.local` e preencha:
 
 ```env
 GROQ_API_KEY=sua_chave_groq
-GROQ_MODEL=groq/compound
+GROQ_MODEL=openai/gpt-oss-120b
 ```
 
 Depois, inicie:
@@ -42,7 +42,8 @@ Quando o Codespaces detectar a porta, mantenha-a privada e clique em **Abrir no 
 | Variável | Uso | Padrão |
 | --- | --- | --- |
 | `GROQ_API_KEY` | Chave da API Groq Cloud | sem valor |
-| `GROQ_MODEL` | Modelo utilizado no backend | `groq/compound` |
+| `GROQ_MODEL` | Modelo utilizado no backend | `openai/gpt-oss-120b` |
+| `GROQ_FALLBACK_MODEL` | Modelo usado quando o Compound recusa o lote | `openai/gpt-oss-120b` |
 | `AI_REQUEST_TIMEOUT_MS` | Tempo máximo de cada chamada | `240000` |
 | `AI_MAX_CONTEXT_CHARS` | Limite do contexto enviado | `2000000` |
 | `NEXT_PUBLIC_MAX_FILE_MB` | Limite do CSV ou Excel | `25` |

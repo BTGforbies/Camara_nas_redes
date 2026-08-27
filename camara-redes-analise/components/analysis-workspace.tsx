@@ -91,10 +91,11 @@ function safeInitialChunkLimit(configured: number) {
   );
 }
 
-function splitRejectedChunk(contextText: string) {
+function splitRejectedChunk(contextText: string, providerMessage?: string) {
   if (contextText.length <= MIN_ANALYSIS_CHUNK_CHARACTERS) {
     throw new Error(
-      "A API recusou até o menor lote automático. Aguarde um instante e tente novamente.",
+      providerMessage ||
+        "A API recusou até o menor lote automático. Aguarde um instante e tente novamente.",
     );
   }
   const smallerLimit = Math.max(
@@ -401,7 +402,10 @@ export default function AnalysisWorkspace() {
           index += 1;
         } catch (error) {
           if (!isRequestTooLarge(error)) throw error;
-          const smallerChunks = splitRejectedChunk(chunks[index]);
+          const smallerChunks = splitRejectedChunk(
+            chunks[index],
+            error instanceof AnalysisRequestError ? error.message : undefined,
+          );
           chunks.splice(index, 1, ...smallerChunks);
           setBatchProgress({ current: index + 1, total: chunks.length });
         }
