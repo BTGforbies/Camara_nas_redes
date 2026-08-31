@@ -3,20 +3,29 @@ import test from "node:test";
 
 import { generateText, ProviderError } from "../lib/ai";
 
-test("envia a geração ao Chat Completions da Groq", async () => {
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+test("envia a geração qualitativa ao Gemini", async () => {
   const originalFetch = globalThis.fetch;
-  const originalKey = process.env.GROQ_API_KEY;
-  const originalModel = process.env.GROQ_MODEL;
+  const originalKey = process.env.GEMINI_API_KEY;
+  const originalModel = process.env.GEMINI_QUALITY_MODEL;
   let requestUrl = "";
+  let requestHeaders = new Headers();
   let requestBody: Record<string, unknown> = {};
 
-  process.env.GROQ_API_KEY = "gsk_teste_local";
-  process.env.GROQ_MODEL = "groq/compound";
+  process.env.GEMINI_API_KEY = "AIza-chave-de-teste-local";
+  process.env.GEMINI_QUALITY_MODEL = "gemini-3.6-flash";
   globalThis.fetch = async (input, init) => {
     requestUrl = String(input);
+    requestHeaders = new Headers(init?.headers);
     requestBody = JSON.parse(String(init?.body));
     return Response.json({
-      choices: [{ message: { content: "Resposta de teste" } }],
+      candidates: [
+        { content: { parts: [{ text: "Resposta de teste" }] } },
+      ],
     });
   };
 
@@ -24,46 +33,91 @@ test("envia a geração ao Chat Completions da Groq", async () => {
     const result = await generateText({
       instructions: "Responda em português.",
       input: "Faça um resumo.",
+      purpose: "quality",
     });
 
     assert.equal(
       requestUrl,
-      "https://api.groq.com/openai/v1/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
     );
-    assert.equal(requestBody.model, "groq/compound");
-    assert.deepEqual(requestBody.messages, [
-      { role: "system", content: "Responda em português." },
-      { role: "user", content: "Faça um resumo." },
+    assert.equal(
+      requestHeaders.get("x-goog-api-key"),
+      "AIza-chave-de-teste-local",
+    );
+    assert.deepEqual(requestBody.systemInstruction, {
+      parts: [{ text: "Responda em português." }],
+    });
+    assert.deepEqual(requestBody.contents, [
+      { role: "user", parts: [{ text: "Faça um resumo." }] },
     ]);
+    assert.deepEqual(
+      (requestBody.generationConfig as Record<string, unknown>).thinkingConfig,
+      { thinkingLevel: "low", includeThoughts: false },
+    );
+    assert.equal(result.model, "gemini-3.6-flash");
     assert.equal(result.text, "Resposta de teste");
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
-    else process.env.GROQ_API_KEY = originalKey;
-    if (originalModel === undefined) delete process.env.GROQ_MODEL;
-    else process.env.GROQ_MODEL = originalModel;
+    restoreEnv("GEMINI_API_KEY", originalKey);
+    restoreEnv("GEMINI_QUALITY_MODEL", originalModel);
   }
 });
 
-test("orienta configurar GROQ_API_KEY quando a chave não existe", async () => {
-  const originalKey = process.env.GROQ_API_KEY;
-  delete process.env.GROQ_API_KEY;
+test("usa o modelo econômico na classificação em massa", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.GEMINI_API_KEY;
+  const originalModel = process.env.GEMINI_BULK_MODEL;
+  let requestUrl = "";
+  let requestBody: Record<string, unknown> = {};
+
+  process.env.GEMINI_API_KEY = "AIza-chave-de-teste-local";
+  process.env.GEMINI_BULK_MODEL = "gemini-3.5-flash-lite";
+  globalThis.fetch = async (input, init) => {
+    requestUrl = String(input);
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      candidates: [{ content: { parts: [{ text: "Lote classificado" }] } }],
+    });
+  };
+
+  try {
+    const result = await generateText({
+      instructions: "Classifique.",
+      input: "Lote.",
+      purpose: "bulk",
+    });
+
+    assert.match(requestUrl, /gemini-3\.5-flash-lite:generateContent$/);
+    assert.deepEqual(
+      (requestBody.generationConfig as Record<string, unknown>).thinkingConfig,
+      { thinkingLevel: "minimal", includeThoughts: false },
+    );
+    assert.equal(result.model, "gemini-3.5-flash-lite");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv("GEMINI_API_KEY", originalKey);
+    restoreEnv("GEMINI_BULK_MODEL", originalModel);
+  }
+});
+
+test("orienta configurar GEMINI_API_KEY quando a chave não existe", async () => {
+  const originalKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 
   try {
     await assert.rejects(
       generateText({ instructions: "Teste", input: "Teste" }),
-      /Configure GROQ_API_KEY/,
+      /Configure GEMINI_API_KEY/,
     );
   } finally {
-    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
-    else process.env.GROQ_API_KEY = originalKey;
+    restoreEnv("GEMINI_API_KEY", originalKey);
   }
 });
 
-test("preserva o status 413 retornado pela Groq", async () => {
+test("preserva o status 413 retornado pelo Gemini", async () => {
   const originalFetch = globalThis.fetch;
-  const originalKey = process.env.GROQ_API_KEY;
-  process.env.GROQ_API_KEY = "gsk_teste_local";
+  const originalKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "AIza-chave-de-teste-local";
   globalThis.fetch = async () =>
     Response.json(
       { error: { message: "Request Entity Too Large" } },
@@ -76,54 +130,34 @@ test("preserva o status 413 retornado pela Groq", async () => {
       (error: unknown) =>
         error instanceof ProviderError &&
         error.status === 413 &&
-        /capacidade de contexto/.test(error.message),
+        /capacidade aceita/.test(error.message),
     );
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
-    else process.env.GROQ_API_KEY = originalKey;
+    restoreEnv("GEMINI_API_KEY", originalKey);
   }
 });
 
-test("troca o Compound pelo GPT-OSS quando a Groq recusa o lote", async () => {
+test("traduz a resposta de chave inválida sem expor a credencial", async () => {
   const originalFetch = globalThis.fetch;
-  const originalKey = process.env.GROQ_API_KEY;
-  const originalModel = process.env.GROQ_MODEL;
-  const requestedModels: string[] = [];
-
-  process.env.GROQ_API_KEY = "gsk_teste_local";
-  process.env.GROQ_MODEL = "groq/compound";
-  globalThis.fetch = async (_input, init) => {
-    const body = JSON.parse(String(init?.body)) as { model: string };
-    requestedModels.push(body.model);
-    if (body.model === "groq/compound") {
-      return Response.json(
-        { error: { message: "Request Entity Too Large" } },
-        { status: 413 },
-      );
-    }
-    return Response.json({
-      choices: [{ message: { content: "Resposta pelo modelo alternativo" } }],
-    });
-  };
+  const originalKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "AIza-chave-de-teste-local";
+  globalThis.fetch = async () =>
+    Response.json(
+      { error: { message: "API key not valid. Please pass a valid API key." } },
+      { status: 400 },
+    );
 
   try {
-    const result = await generateText({
-      instructions: "Teste",
-      input: "Teste",
-    });
-
-    assert.deepEqual(requestedModels, [
-      "groq/compound",
-      "openai/gpt-oss-120b",
-    ]);
-    assert.equal(result.model, "openai/gpt-oss-120b");
-    assert.equal(result.text, "Resposta pelo modelo alternativo");
+    await assert.rejects(
+      generateText({ instructions: "Teste", input: "Teste" }),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.status === 400 &&
+        /GEMINI_API_KEY/.test(error.message),
+    );
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
-    else process.env.GROQ_API_KEY = originalKey;
-    if (originalModel === undefined) delete process.env.GROQ_MODEL;
-    else process.env.GROQ_MODEL = originalModel;
+    restoreEnv("GEMINI_API_KEY", originalKey);
   }
 });

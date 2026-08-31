@@ -22,7 +22,7 @@ export async function GET() {
     limits: {
       maxFileMb: Number(process.env.NEXT_PUBLIC_MAX_FILE_MB || 25),
       maxContextCharacters: Number(
-        process.env.NEXT_PUBLIC_MAX_CONTEXT_CHARS || 2_000_000,
+        process.env.NEXT_PUBLIC_MAX_CONTEXT_CHARS || 10_000_000,
       ),
       maxChunkCharacters: safeChunkCharacters(),
     },

@@ -7,8 +7,8 @@ import type {
 } from "@/lib/types";
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-export const DEFAULT_MAX_CONTEXT_CHARACTERS = 2_000_000;
-export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 5_000;
+export const DEFAULT_MAX_CONTEXT_CHARACTERS = 10_000_000;
+export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 20_000;
 export const MIN_ANALYSIS_CHUNK_CHARACTERS = 2_000;
 const MAX_ANALYSIS_ROW_VALUE_CHARACTERS = 1_400;
 const COMPACTION_MARKER = " … [trecho compactado automaticamente] … ";

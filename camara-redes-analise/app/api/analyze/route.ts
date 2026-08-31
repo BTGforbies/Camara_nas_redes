@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   try {
     const body = requestSchema.parse(await request.json()) as AnalyzeRequest;
-    const maxContext = Number(process.env.AI_MAX_CONTEXT_CHARS || 2_000_000);
+    const maxContext = Number(process.env.AI_MAX_CONTEXT_CHARS || 10_000_000);
     if (body.workbook.contextText.length > maxContext) {
       return Response.json(
         {
@@ -74,9 +74,11 @@ export async function POST(request: Request) {
     }
 
     const prompt = buildSectionPrompt(body);
+    const purpose = body.sectionId === "classification" ? "bulk" : "quality";
     let generated = await generateText({
       instructions: prompt.instructions,
       input: prompt.input,
+      purpose,
       signal: request.signal,
     });
 
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
           generated.text,
           prompt.definition.characterLimit,
         ),
+        purpose,
         signal: request.signal,
       });
     }

@@ -79,6 +79,7 @@ Responda somente com JSON válido, sem bloco markdown, exatamente neste formato:
 
 A versão revisada deve obedecer ao limite, preservar o sentido editorial da seção, usar português do Brasil e nunca acrescentar dados ausentes.
       `.trim(),
+      purpose: "quality",
       signal: request.signal,
     });
     const result = parseAiResponse(generated.text);

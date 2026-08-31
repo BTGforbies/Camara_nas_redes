@@ -1,12 +1,30 @@
 export interface AiAvailability {
   configured: boolean;
   model: string;
+  bulkModel: string;
+  qualityModel: string;
 }
+
+export type AiPurpose = "bulk" | "quality";
 
 interface GenerateTextOptions {
   instructions: string;
   input: string;
+  purpose?: AiPurpose;
   signal?: AbortSignal;
+}
+
+interface GeminiPayload {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: unknown; thought?: boolean }>;
+    };
+    finishReason?: string;
+  }>;
+  promptFeedback?: {
+    blockReason?: string;
+    blockReasonMessage?: string;
+  };
 }
 
 export class ProviderError extends Error {
@@ -18,20 +36,27 @@ export class ProviderError extends Error {
 
 function aiConfig() {
   return {
-    apiKey: process.env.GROQ_API_KEY,
-    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-    fallbackModel:
-      process.env.GROQ_FALLBACK_MODEL || "openai/gpt-oss-120b",
+    apiKey: process.env.GEMINI_API_KEY,
+    bulkModel:
+      process.env.GEMINI_BULK_MODEL || "gemini-3.5-flash-lite",
+    qualityModel:
+      process.env.GEMINI_QUALITY_MODEL || "gemini-3.6-flash",
   };
 }
 
 export function getAiAvailability(): AiAvailability {
   const config = aiConfig();
-  return { configured: Boolean(config.apiKey), model: config.model };
+  return {
+    configured: Boolean(config.apiKey),
+    model: config.qualityModel,
+    bulkModel: config.bulkModel,
+    qualityModel: config.qualityModel,
+  };
 }
 
 function sanitizeUpstreamMessage(value: string) {
   return value
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[chave ocultada]")
     .replace(/xai-[A-Za-z0-9_-]+/g, "[chave ocultada]")
     .replace(/gsk_[A-Za-z0-9_-]+/g, "[chave ocultada]")
     .replace(/\s+/g, " ")
@@ -59,113 +84,156 @@ async function upstreamErrorMessage(response: Response) {
 }
 
 function apiError(status: number, detail: string) {
-  if (status === 401) {
-    return "A chave da API de IA foi recusada. Confira GROQ_API_KEY no arquivo .env.local.";
+  const normalized = detail.toLowerCase();
+  if (
+    status === 401 ||
+    normalized.includes("api key not valid") ||
+    normalized.includes("api_key_invalid") ||
+    normalized.includes("invalid api key")
+  ) {
+    return "A chave do Gemini foi recusada. Confira GEMINI_API_KEY no arquivo .env.local.";
   }
   if (status === 403) {
     return detail
-      ? `O provedor de IA bloqueou o acesso: ${detail}`
-      : "A chave foi reconhecida, mas não possui permissão para utilizar o modelo configurado.";
+      ? `O Gemini bloqueou o acesso: ${detail}`
+      : "A chave foi reconhecida, mas não possui permissão ou faturamento ativo para utilizar o modelo configurado.";
+  }
+  if (status === 404) {
+    return detail
+      ? `O modelo configurado não está disponível: ${detail}`
+      : "O modelo configurado não está disponível para esta chave do Gemini.";
   }
   if (status === 400) {
     return detail
-      ? `O provedor de IA recusou a solicitação: ${detail}`
-      : "O provedor de IA recusou o formato da solicitação.";
+      ? `O Gemini recusou a solicitação: ${detail}`
+      : "O Gemini recusou o formato da solicitação.";
   }
   if (status === 429) {
-    return "O limite gratuito da API foi atingido. Aguarde alguns instantes e tente novamente.";
+    return "A cota ou o limite temporário do Gemini foi atingido. Aguarde alguns instantes e tente novamente.";
   }
   if (status === 413) {
-    return "O lote ultrapassou a capacidade de contexto do modelo de IA.";
+    return "O lote ultrapassou a capacidade aceita pela API do Gemini.";
   }
   if (status >= 500) {
-    return "O serviço de IA está indisponível no momento. Tente novamente.";
+    return "O serviço do Gemini está indisponível no momento. Tente novamente.";
   }
-  return detail || "Não foi possível concluir a geração com a IA.";
+  return detail || "Não foi possível concluir a geração com o Gemini.";
 }
 
-function retryDelay(response: Response) {
-  const value = Number(response.headers.get("retry-after") || 0);
+function retryDelay(response: Response, attempt: number) {
+  const retryAfter = Number(response.headers.get("retry-after") || 0);
+  const exponential = 1_000 * 2 ** attempt;
   return Math.min(
-    Math.max(Number.isFinite(value) ? value * 1_000 : 0, 1_000),
-    60_000,
+    Math.max(
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1_000
+        : exponential,
+      1_000,
+    ),
+    30_000,
   );
 }
 
-function outputText(payload: unknown) {
-  if (!payload || typeof payload !== "object") return "";
-  const response = payload as {
-    choices?: Array<{ message?: { content?: unknown } }>;
-  };
-  const content = response.choices?.[0]?.message?.content;
-  return typeof content === "string" ? content.trim() : "";
+function outputText(payload: GeminiPayload) {
+  const parts = payload.candidates?.[0]?.content?.parts ?? [];
+  return parts
+    .filter((part) => !part.thought && typeof part.text === "string")
+    .map((part) => String(part.text))
+    .join("")
+    .trim();
 }
 
-export async function generateText({ instructions, input, signal }: GenerateTextOptions) {
+function emptyResponseMessage(payload: GeminiPayload) {
+  const reason =
+    payload.promptFeedback?.blockReasonMessage ||
+    payload.promptFeedback?.blockReason ||
+    payload.candidates?.[0]?.finishReason;
+  return reason
+    ? `O Gemini não retornou texto (${sanitizeUpstreamMessage(reason)}).`
+    : "O Gemini retornou uma resposta vazia.";
+}
+
+function thinkingLevel(purpose: AiPurpose) {
+  const configured =
+    purpose === "bulk"
+      ? process.env.GEMINI_BULK_THINKING_LEVEL || "minimal"
+      : process.env.GEMINI_QUALITY_THINKING_LEVEL || "low";
+  return configured.toLowerCase();
+}
+
+export async function generateText({
+  instructions,
+  input,
+  purpose = "quality",
+  signal,
+}: GenerateTextOptions) {
   const config = aiConfig();
   if (!config.apiKey) {
-    throw new ProviderError("Configure GROQ_API_KEY no arquivo .env.local.");
+    throw new ProviderError("Configure GEMINI_API_KEY no arquivo .env.local.");
   }
+
+  const model = purpose === "bulk" ? config.bulkModel : config.qualityModel;
   const timeout = Number(process.env.AI_REQUEST_TIMEOUT_MS || 240_000);
-  const timeoutSignal = AbortSignal.timeout(Number.isFinite(timeout) ? timeout : 240_000);
-  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const timeoutSignal = AbortSignal.timeout(
+    Number.isFinite(timeout) ? timeout : 240_000,
+  );
+  const requestSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
   try {
-    const models = [config.model];
-    if (
-      config.model.startsWith("groq/compound") &&
-      config.fallbackModel !== config.model
-    ) {
-      models.push(config.fallbackModel);
-    }
-
-    for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
-      const model = models[modelIndex];
-      let response: Response | undefined;
-
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${config.apiKey}`,
-            "Content-Type": "application/json",
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": config.apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: instructions }],
           },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: instructions },
-              { role: "user", content: input },
-            ],
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: input }],
+            },
+          ],
+          generationConfig: {
             temperature: 0.2,
-            max_completion_tokens: Number(
+            maxOutputTokens: Number(
               process.env.AI_MAX_COMPLETION_TOKENS || 3_000,
             ),
-          }),
-          signal: requestSignal,
-        });
-        if (response.status !== 429 || attempt === 3) break;
-        const retryResponse = response;
-        await new Promise((resolve) =>
-          setTimeout(resolve, retryDelay(retryResponse)),
-        );
-      }
+            thinkingConfig: {
+              thinkingLevel: thinkingLevel(purpose),
+              includeThoughts: false,
+            },
+          },
+        }),
+        signal: requestSignal,
+      });
 
-      if (!response) throw new ProviderError("O provedor de IA não respondeu.");
-      if (response.status === 413 && modelIndex < models.length - 1) {
-        continue;
-      }
-      if (!response.ok) {
-        throw new ProviderError(
-          apiError(response.status, await upstreamErrorMessage(response)),
-          response.status,
-        );
-      }
-      const text = outputText(await response.json());
-      if (!text) throw new ProviderError("A IA retornou uma resposta vazia.");
-      return { text, model };
+      const retryable = [429, 500, 502, 503, 504].includes(response.status);
+      if (!retryable || attempt === 3) break;
+      await new Promise((resolve) =>
+        setTimeout(resolve, retryDelay(response as Response, attempt)),
+      );
     }
 
-    throw new ProviderError("O provedor de IA não respondeu.");
+    if (!response) throw new ProviderError("O Gemini não respondeu.");
+    if (!response.ok) {
+      throw new ProviderError(
+        apiError(response.status, await upstreamErrorMessage(response)),
+        response.status,
+      );
+    }
+
+    const payload = (await response.json()) as GeminiPayload;
+    const text = outputText(payload);
+    if (!text) throw new ProviderError(emptyResponseMessage(payload));
+    return { text, model };
   } catch (error) {
     if (error instanceof ProviderError) throw error;
     if (
@@ -174,6 +242,8 @@ export async function generateText({ instructions, input, signal }: GenerateText
     ) {
       throw new Error("A geração foi cancelada ou excedeu o tempo limite.");
     }
-    throw new Error("Não foi possível concluir a geração com a IA. Tente novamente.");
+    throw new Error(
+      "Não foi possível concluir a geração com o Gemini. Tente novamente.",
+    );
   }
 }

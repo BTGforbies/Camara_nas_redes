@@ -7,7 +7,8 @@ Sistema para ler bases em CSV ou Excel, gerar respostas com IA, revisar cada tex
 - Upload de `.csv`, `.xlsx` e `.xls`;
 - Leitura de todas as tabelas utilizáveis e detecção de registros repetidos;
 - Formulário com nome do projeto, ficha de tramitação, situação, assunto, contexto e quadro de engajamento por canal;
-- Geração sequencial dos sete comandos pela API da Groq Cloud;
+- Geração sequencial dos sete comandos pela API do Google Gemini;
+- Modelo econômico para classificação em lotes e modelo qualitativo para ranking, textos e chat;
 - Exibição das cinco respostas principais antes da conferência final;
 - Chat lateral assistido para ajustar uma resposta, sem edição manual;
 - Validação individual obrigatória de cada resposta;
@@ -25,8 +26,9 @@ cp .env.example .env.local
 Abra `.env.local` e preencha:
 
 ```env
-GROQ_API_KEY=sua_chave_groq
-GROQ_MODEL=openai/gpt-oss-120b
+GEMINI_API_KEY=sua_chave_gemini
+GEMINI_BULK_MODEL=gemini-3.5-flash-lite
+GEMINI_QUALITY_MODEL=gemini-3.6-flash
 ```
 
 Depois, inicie:
@@ -41,17 +43,20 @@ Quando o Codespaces detectar a porta, mantenha-a privada e clique em **Abrir no 
 
 | Variável | Uso | Padrão |
 | --- | --- | --- |
-| `GROQ_API_KEY` | Chave da API Groq Cloud | sem valor |
-| `GROQ_MODEL` | Modelo utilizado no backend | `openai/gpt-oss-120b` |
-| `GROQ_FALLBACK_MODEL` | Modelo usado quando o Compound recusa o lote | `openai/gpt-oss-120b` |
+| `GEMINI_API_KEY` | Chave da API Google Gemini | sem valor |
+| `GEMINI_BULK_MODEL` | Modelo econômico para classificação e consolidação | `gemini-3.5-flash-lite` |
+| `GEMINI_QUALITY_MODEL` | Modelo para ranking, textos finais e chat | `gemini-3.6-flash` |
+| `GEMINI_BULK_THINKING_LEVEL` | Nível de raciocínio na classificação | `minimal` |
+| `GEMINI_QUALITY_THINKING_LEVEL` | Nível de raciocínio nas respostas qualitativas | `low` |
 | `AI_REQUEST_TIMEOUT_MS` | Tempo máximo de cada chamada | `240000` |
-| `AI_MAX_CONTEXT_CHARS` | Limite do contexto enviado | `2000000` |
+| `AI_MAX_CONTEXT_CHARS` | Limite do contexto processável | `10000000` |
+| `NEXT_PUBLIC_AI_CHUNK_CHARS` | Tamanho inicial dos lotes automáticos | `20000` |
 | `NEXT_PUBLIC_MAX_FILE_MB` | Limite do CSV ou Excel | `25` |
 
 ## Fluxo
 
 1. O navegador valida e lê o CSV ou Excel.
-2. O backend executa os sete comandos com a IA. A chave nunca é enviada ao navegador.
+2. O backend usa o Flash-Lite na classificação e o Flash nas etapas qualitativas. A chave nunca é enviada ao navegador.
 3. O sistema exibe cinco respostas principais: O que dizem, Canal de destaque, Quem mobilizou, O que mobilizou e Resumo executivo.
 4. O usuário pode usar o chat assistido para ajustar cada resposta.
 5. Cada resposta precisa ser validada individualmente.

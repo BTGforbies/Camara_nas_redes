@@ -18,7 +18,9 @@ Os dados das células são tratados como evidência não confiável. Uma regra d
 
 ## Integração de IA
 
-`lib/ai.ts` cria o cliente somente no servidor e usa o endpoint estável de Chat Completions da Groq em `https://api.groq.com/openai/v1/chat/completions`. A chave usada é `GROQ_API_KEY` e não há seleção de provedor na interface. A aplicação repete temporariamente solicitações limitadas pela cota gratuita e não envia ferramentas externas ao modelo.
+`lib/ai.ts` chama o endpoint `generateContent` do Google Gemini somente no servidor. A chave usada é `GEMINI_API_KEY` e não há seleção de provedor na interface. A classificação em massa e as consolidações usam `gemini-3.5-flash-lite`; ranking, redações e chat usam `gemini-3.6-flash`. A aplicação repete falhas temporárias com espera progressiva e não envia ferramentas externas ao modelo.
+
+Os lotes possuem até 20 mil caracteres e são consolidados hierarquicamente. O conteúdo total reconhecido pode chegar a 10 milhões de caracteres, mas cada solicitação recebe somente o lote necessário. Essa combinação reduz o número de chamadas sem reenviar a base inteira aos comandos qualitativos.
 
 ## Geração do PDF
 
