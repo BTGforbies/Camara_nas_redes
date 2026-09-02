@@ -39,7 +39,6 @@ export interface WorkbookPayload {
   corruptedCount: number;
   sheets: WorkbookSheet[];
   warnings: string[];
-  contextText: string;
 }
 
 export interface ProjectContext {
@@ -70,28 +69,61 @@ export interface AnalysisSectionResult extends AnalysisSectionDefinition {
   error?: string;
 }
 
-export interface AnalyzeRequest {
-  sectionId: AnalysisSectionId;
-  project: ProjectContext;
-  workbook: Pick<
-    WorkbookPayload,
-    | "fileName"
-    | "totalSheets"
-    | "usableSheets"
-    | "recordCount"
-    | "duplicateCount"
-    | "corruptedCount"
-    | "warnings"
-    | "contextText"
-  >;
-  previousResults: Partial<Record<AnalysisSectionId, string>>;
-  chunk?: {
-    index: number;
-    total: number;
-    aggregation: boolean;
-    finalAggregation: boolean;
-  };
+export interface AnalysisRecord {
+  id: string;
+  text: string;
 }
+
+export type ClassificationStatus = "RELEVANTE" | "OFFTOPIC";
+export type AnalysisStance = "POSITIVO" | "NEGATIVO" | "NEUTRO";
+
+export interface ClassifiedRecord {
+  id: string;
+  status: ClassificationStatus;
+  stance: AnalysisStance;
+  themes: string[];
+}
+
+export interface AnalysisMetrics {
+  totalGross: number;
+  analyzed: number;
+  offTopic: number;
+  repeated: number;
+  corrupted: number;
+  relevant: number;
+}
+
+export interface RepresentativePost {
+  id: string;
+  text: string;
+}
+
+export interface ThemeSummary {
+  name: string;
+  count: number;
+  percentage: number;
+  candidates: RepresentativePost[];
+}
+
+export interface NamedAggregate {
+  name: string;
+  posts: number;
+  engagement: number;
+}
+
+export interface AnalysisSummary {
+  metrics: AnalysisMetrics;
+  stances: Record<AnalysisStance, number>;
+  themes: ThemeSummary[];
+  otherThemeOccurrences: number;
+  channels: NamedAggregate[];
+  authors: NamedAggregate[];
+}
+
+export type ReportBundle = Record<
+  Exclude<AnalysisSectionId, "classification">,
+  string
+>;
 
 export const REPORT_SECTION_IDS: AnalysisSectionId[] = [
   "qualitative",

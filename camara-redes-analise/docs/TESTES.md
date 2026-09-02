@@ -17,7 +17,7 @@ npm test
 
 ## Verificação manual recomendada com uma chave real
 
-1. Copiar `.env.example` para `.env.local` e configurar `GEMINI_API_KEY`.
+1. Copiar `.env.example` para `.env.local` e configurar `GROQ_API_KEY`.
 2. Iniciar com `npm run dev`.
 3. Enviar arquivos `.csv`, `.xlsx` e `.xls` reais.
 4. Conferir tabelas, registros e avisos reconhecidos.

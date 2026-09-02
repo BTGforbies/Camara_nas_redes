@@ -7,11 +7,9 @@ import type {
 } from "@/lib/types";
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-export const DEFAULT_MAX_CONTEXT_CHARACTERS = 10_000_000;
-export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 20_000;
+export const DEFAULT_ANALYSIS_CHUNK_CHARACTERS = 10_000;
 export const MIN_ANALYSIS_CHUNK_CHARACTERS = 2_000;
-const MAX_ANALYSIS_ROW_VALUE_CHARACTERS = 1_400;
-const COMPACTION_MARKER = " … [trecho compactado automaticamente] … ";
+const MAX_CLASSIFICATION_TEXT_CHARACTERS = 900;
 
 const AUTHOR_ALIASES = [
   "author",
@@ -216,7 +214,7 @@ function annotateRows(sheets: WorkbookSheet[]) {
         corruptedCount += 1;
       }
 
-      if (author && text) {
+      if (!row.corrupted && author && text) {
         const duplicateKey = `${normalize(author)}\u0000${normalize(text)}`;
         const original = seen.get(duplicateKey);
         if (original) {
@@ -232,155 +230,10 @@ function annotateRows(sheets: WorkbookSheet[]) {
   return { duplicateCount, corruptedCount };
 }
 
-function compactTextForAnalysis(value: string, limit: number) {
-  if (value.length <= limit) return value;
-  if (limit <= COMPACTION_MARKER.length + 2) {
-    return `${value.slice(0, Math.max(1, limit - 1))}…`;
-  }
-  const available = limit - COMPACTION_MARKER.length;
-  const startLength = Math.ceil(available * 0.7);
-  const endLength = available - startLength;
-  return `${value.slice(0, startLength).trimEnd()}${COMPACTION_MARKER}${value.slice(-endLength).trimStart()}`;
-}
-
-function compactRowValuesForAnalysis(values: string[]) {
-  const compacted = values.map((value) => value.replace(/\|/g, "\\|"));
-  let changed = false;
-
-  while (compacted.join(" | ").length > MAX_ANALYSIS_ROW_VALUE_CHARACTERS) {
-    const longestIndex = compacted.reduce(
-      (selected, value, index, all) =>
-        value.length > all[selected].length ? index : selected,
-      0,
-    );
-    const current = compacted[longestIndex];
-    const excess = compacted.join(" | ").length - MAX_ANALYSIS_ROW_VALUE_CHARACTERS;
-    const nextLimit = Math.max(8, current.length - excess - 20);
-    const next = compactTextForAnalysis(current, nextLimit);
-    if (next.length >= current.length) break;
-    compacted[longestIndex] = next;
-    changed = true;
-  }
-
-  return { values: compacted, changed };
-}
-
-function makeContextText(sheets: WorkbookSheet[]) {
-  let compactedRows = 0;
-  const blocks = sheets.map((sheet) => {
-    const detectedHeaders = [
-      sheet.detectedColumns.author,
-      sheet.detectedColumns.text,
-      sheet.detectedColumns.channel,
-      sheet.detectedColumns.engagement,
-    ].filter((header): header is string => Boolean(header));
-    const selectedHeaders = sheet.detectedColumns.text
-      ? [...new Set(detectedHeaders)]
-      : sheet.headers;
-    const selectedIndexes = selectedHeaders.map((header) =>
-      sheet.headers.indexOf(header),
-    );
-    const lines = sheet.rows.map((row) => {
-      const flags = [
-        row.duplicateOf ? `REPETIDO DE ${row.duplicateOf}` : "",
-        row.corrupted ? "POSSÍVEL LINHA CORROMPIDA" : "",
-      ].filter(Boolean);
-      const compacted = compactRowValuesForAnalysis(
-        selectedIndexes.map((index) => row.values[index] ?? ""),
-      );
-      if (compacted.changed) compactedRows += 1;
-      return `${sheet.name}!${row.rowNumber}${flags.length ? ` [${flags.join("; ")}]` : ""} | ${compacted.values.join(" | ")}`;
-    });
-
-    const headerLine = compactTextForAnalysis(
-      selectedHeaders.join(" | "),
-      MAX_ANALYSIS_ROW_VALUE_CHARACTERS,
-    );
-
-    return [
-      `PLANILHA: ${sheet.name}`,
-      `COLUNAS: ${headerLine}`,
-      ...lines,
-    ].join("\n");
-  });
-
-  return { contextText: blocks.join("\n\n"), compactedRows };
-}
-
-export function splitWorkbookContext(
-  contextText: string,
-  maxChunkCharacters = DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
-) {
-  if (
-    !Number.isFinite(maxChunkCharacters) ||
-    maxChunkCharacters < MIN_ANALYSIS_CHUNK_CHARACTERS
-  ) {
-    throw new Error("O limite de cada lote da análise é inválido.");
-  }
-  if (contextText.length <= maxChunkCharacters) return [contextText];
-
-  const chunks: string[] = [];
-  const current: string[] = [];
-  let activeHeaders: string[] = [];
-  let currentLength = 0;
-
-  const pushLine = (line: string) => {
-    current.push(line);
-    currentLength += line.length + (current.length > 1 ? 1 : 0);
-  };
-  const flush = () => {
-    const value = current.join("\n").trim();
-    if (value) chunks.push(value);
-    current.length = 0;
-    currentLength = 0;
-  };
-
-  for (const line of contextText.split("\n")) {
-    if (line.startsWith("PLANILHA: ")) {
-      activeHeaders = [line];
-    } else if (line.startsWith("COLUNAS: ")) {
-      activeHeaders = [activeHeaders[0], line].filter(Boolean);
-    }
-
-    const continuationHeaders =
-      current.length === 0 &&
-      !line.startsWith("PLANILHA: ") &&
-      !line.startsWith("COLUNAS: ")
-        ? activeHeaders
-        : [];
-    const continuationLength = continuationHeaders.reduce(
-      (total, header) => total + header.length + 1,
-      0,
-    );
-    const projected =
-      currentLength +
-      continuationLength +
-      line.length +
-      (current.length || continuationHeaders.length ? 1 : 0);
-
-    if (projected > maxChunkCharacters && current.length) {
-      flush();
-      for (const header of activeHeaders) pushLine(header);
-    } else {
-      for (const header of continuationHeaders) pushLine(header);
-    }
-
-    if (currentLength + line.length + (current.length ? 1 : 0) > maxChunkCharacters) {
-      throw new Error(
-        "Uma postagem isolada é grande demais para a análise. Reduza apenas essa célula antes de tentar novamente.",
-      );
-    }
-    if (!current.length || current[current.length - 1] !== line) pushLine(line);
-  }
-
-  flush();
-  return chunks;
-}
-
 export function parseWorkbookArrayBuffer(
   buffer: ArrayBuffer,
   metadata: { fileName: string; fileSize: number },
-  options?: { maxFileSize?: number; maxContextCharacters?: number },
+  options?: { maxFileSize?: number },
 ): WorkbookPayload {
   const extension = validateWorkbookBytes(
     metadata.fileName,
@@ -432,7 +285,7 @@ export function parseWorkbookArrayBuffer(
   for (const sheet of sheets) {
     if (!sheet.detectedColumns.text) {
       warnings.push(
-        `A coluna de texto não foi identificada automaticamente em “${sheet.name}”. A IA receberá todas as colunas.`,
+        `A coluna de texto não foi identificada automaticamente em “${sheet.name}”. O sistema usará localmente a célula textual mais completa de cada linha.`,
       );
     }
     if (!sheet.detectedColumns.author) {
@@ -452,17 +305,18 @@ export function parseWorkbookArrayBuffer(
     );
   }
 
-  const { contextText, compactedRows } = makeContextText(sheets);
+  const compactedRows = sheets.reduce((total, sheet) => {
+    const textIndex = sheet.detectedColumns.text
+      ? sheet.headers.indexOf(sheet.detectedColumns.text)
+      : -1;
+    return total + sheet.rows.filter((row) => {
+      const values = textIndex >= 0 ? [row.values[textIndex]] : row.values;
+      return values.some((value) => value.length > MAX_CLASSIFICATION_TEXT_CHARACTERS);
+    }).length;
+  }, 0);
   if (compactedRows) {
     warnings.push(
-      `${compactedRows} linha(s) continham células excepcionalmente longas e foram compactadas automaticamente apenas para a análise. O arquivo original não foi alterado.`,
-    );
-  }
-  const maxContextCharacters =
-    options?.maxContextCharacters ?? DEFAULT_MAX_CONTEXT_CHARACTERS;
-  if (contextText.length > maxContextCharacters) {
-    throw new Error(
-      `O conteúdo reconhecido tem ${contextText.length.toLocaleString("pt-BR")} caracteres e ultrapassa o limite configurado de ${maxContextCharacters.toLocaleString("pt-BR")}. Divida o arquivo ou aumente NEXT_PUBLIC_MAX_CONTEXT_CHARS.`,
+      `${compactedRows} linha(s) contêm texto longo. Somente uma versão compacta e anonimizada será enviada para classificação; o arquivo original não será alterado.`,
     );
   }
 
@@ -477,6 +331,5 @@ export function parseWorkbookArrayBuffer(
     corruptedCount,
     sheets,
     warnings,
-    contextText,
   };
 }

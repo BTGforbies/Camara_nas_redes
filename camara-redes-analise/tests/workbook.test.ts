@@ -5,7 +5,6 @@ import * as XLSX from "xlsx";
 
 import {
   parseWorkbookArrayBuffer,
-  splitWorkbookContext,
   validateWorkbookBytes,
 } from "../lib/workbook";
 
@@ -54,8 +53,7 @@ test("processa xlsx com várias planilhas e marca repetido do mesmo autor", () =
   assert.equal(result.usableSheets, 2);
   assert.equal(result.recordCount, 4);
   assert.equal(result.duplicateCount, 1);
-  assert.match(result.contextText, /REPETIDO DE Postagens!2/);
-  assert.match(result.contextText, /Complemento/);
+  assert.equal(result.sheets[0].rows[1].duplicateOf, "Postagens!2");
 });
 
 test("aceita arquivo xls binário", () => {
@@ -101,20 +99,7 @@ test("rejeita extensão e assinatura incompatíveis", () => {
   );
 });
 
-test("bloqueia contexto acima do limite sem truncar", () => {
-  const bytes = makeWorkbook("xlsx") as ArrayBuffer;
-  assert.throws(
-    () =>
-      parseWorkbookArrayBuffer(
-        bytes,
-        { fileName: "proposta.xlsx", fileSize: bytes.byteLength },
-        { maxContextCharacters: 20 },
-      ),
-    /ultrapassa o limite configurado/,
-  );
-});
-
-test("envia à IA somente as colunas relevantes quando elas são detectadas", () => {
+test("preserva somente a planilha local, sem criar um prompt bruto", () => {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     workbook,
@@ -130,30 +115,11 @@ test("envia à IA somente as colunas relevantes quando elas são detectadas", ()
     fileSize: bytes.byteLength,
   });
 
-  assert.match(result.contextText, /Author \| Text \| Channel \| Engagement Score/);
-  assert.doesNotMatch(result.contextText, /URL enorme|exemplo\.test|Metadado|ignorar/);
+  assert.equal("contextText" in result, false);
+  assert.equal(result.sheets[0].rows[0].values[4], "https://exemplo.test/postagem");
 });
 
-test("divide uma base grande em lotes e repete os cabeçalhos", () => {
-  const context = [
-    "PLANILHA: Dados",
-    "COLUNAS: Author | Text | Channel",
-    ...Array.from(
-      { length: 500 },
-      (_, index) => `Dados!${index + 2} | Autor ${index} | ${"texto ".repeat(20)} | Instagram`,
-    ),
-  ].join("\n");
-  const chunks = splitWorkbookContext(context, 12_000);
-
-  assert.ok(chunks.length > 1);
-  for (const chunk of chunks) {
-    assert.ok(chunk.length <= 12_000);
-    assert.match(chunk, /^PLANILHA: Dados\nCOLUNAS: Author \| Text \| Channel/);
-  }
-  assert.match(chunks.at(-1) ?? "", /Dados!501/);
-});
-
-test("compacta automaticamente uma célula isolada muito longa", () => {
+test("mantém a célula longa no arquivo e avisa sobre compactação para IA", () => {
   const workbook = XLSX.utils.book_new();
   const longText = `Início do argumento. ${"detalhe relevante ".repeat(500)}Fim do argumento.`;
   XLSX.utils.book_append_sheet(
@@ -170,10 +136,6 @@ test("compacta automaticamente uma célula isolada muito longa", () => {
     fileSize: bytes.byteLength,
   });
 
-  assert.match(result.contextText, /Início do argumento/);
-  assert.match(result.contextText, /trecho compactado automaticamente/);
-  assert.match(result.contextText, /Fim do argumento/);
-  assert.match(result.warnings.join(" "), /compactadas automaticamente/);
+  assert.match(result.warnings.join(" "), /versão compacta e anonimizada/);
   assert.equal(result.sheets[0].rows[0].values[1], longText);
-  assert.doesNotThrow(() => splitWorkbookContext(result.contextText, 2_000));
 });

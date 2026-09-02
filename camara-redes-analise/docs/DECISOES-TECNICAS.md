@@ -10,24 +10,24 @@ O SheetJS lê `.csv`, `.xlsx` e `.xls` no navegador. Antes da leitura, o sistema
 
 O pré-processamento identifica colunas comuns de autor, texto, canal e pontos de engajamento. Textos idênticos do mesmo autor recebem uma pré-marcação de repetição sem serem removidos. Linhas sem campos essenciais recebem sinal de possível corrupção.
 
-## Execução dos prompts
+## Execução da análise
 
-Os sete comandos estão centralizados em `lib/prompts.ts`. Cada definição declara suas dependências. O navegador chama o backend uma seção por vez, o que permite mostrar progresso real, preservar respostas concluídas e repetir apenas a seção que falhou.
+As sete saídas visíveis continuam separadas, mas a IA trabalha em apenas duas fases. Primeiro, `openai/gpt-oss-20b` classifica pequenos lotes em JSON. Depois, `openai/gpt-oss-120b` recebe somente métricas e exemplos compactos para gerar o ranking e os cinco textos em uma chamada. Somas, percentuais, repetidos, linhas corrompidas, canais e autores são calculados no navegador.
 
 Os dados das células são tratados como evidência não confiável. Uma regra de sistema proíbe obedecer a comandos eventualmente inseridos na tabela, reduzindo risco de prompt injection.
 
 ## Integração de IA
 
-`lib/ai.ts` chama o endpoint `generateContent` do Google Gemini somente no servidor. A chave usada é `GEMINI_API_KEY` e não há seleção de provedor na interface. A classificação em massa e as consolidações usam `gemini-3.5-flash-lite`; ranking, redações e chat usam `gemini-3.6-flash`. A aplicação repete falhas temporárias com espera progressiva e não envia ferramentas externas ao modelo.
+`lib/ai.ts` chama `https://api.groq.com/openai/v1/chat/completions` somente no servidor. A chave usada é `GROQ_API_KEY` e não há seleção de provedor na interface. As respostas usam Structured Outputs em modo estrito, não habilitam ferramentas externas e ocultam o raciocínio do modelo. A aplicação repete falhas temporárias com espera progressiva.
 
-Os lotes possuem até 20 mil caracteres e são consolidados hierarquicamente. O conteúdo total reconhecido pode chegar a 10 milhões de caracteres, mas cada solicitação recebe somente o lote necessário. Essa combinação reduz o número de chamadas sem reenviar a base inteira aos comandos qualitativos.
+Os lotes possuem cerca de 10 mil caracteres, no máximo 20 postagens e nunca precisam de consolidação textual por IA. Cada postagem usa id neutro e até 900 caracteres. Se a API recusar um lote, o navegador o divide ao meio automaticamente.
 
 ## Geração do PDF
 
 O PDF é criado no backend com `pdf-lib`. O algoritmo controla margens, quebra de linhas e criação de páginas, mas não adiciona capa, cabeçalho, rodapé ou paginação. Apenas as cinco respostas principais validadas entram no documento.
 
-O documento recebe somente os títulos das sete seções e as respostas confirmadas. Prompts, formulário, dados brutos, histórico e detalhes técnicos não entram no arquivo.
+O documento recebe somente o ranking e os cinco textos confirmados. Prompts, formulário, tabelas automáticas, dados brutos, histórico e detalhes técnicos não entram no arquivo.
 
 ## Privacidade
 
-Não há banco de dados, autenticação ou armazenamento permanente. O CSV ou Excel é processado no navegador; o contexto necessário segue para a API escolhida durante a geração. O sistema não registra credenciais nem o conteúdo da proposta.
+Não há banco de dados, autenticação ou armazenamento permanente. O CSV ou Excel é processado no navegador. Antes da classificação, URLs, e-mails, telefones, CPF e perfis iniciados por `@` são removidos; autores, canais e engajamento não seguem nos lotes. A redação final recebe apenas agregados e até três exemplos anonimizados por tema. A organização deve ativar Zero Data Retention no console da Groq.

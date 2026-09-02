@@ -21,9 +21,6 @@ export async function GET() {
     ai: getAiAvailability(),
     limits: {
       maxFileMb: Number(process.env.NEXT_PUBLIC_MAX_FILE_MB || 25),
-      maxContextCharacters: Number(
-        process.env.NEXT_PUBLIC_MAX_CONTEXT_CHARS || 10_000_000,
-      ),
       maxChunkCharacters: safeChunkCharacters(),
     },
   });

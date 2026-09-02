@@ -3,26 +3,6 @@ import { resolve } from "node:path";
 
 import { generateReportPdf } from "../lib/pdf";
 
-const ranking = `### Totais
-- Total bruto de postagens do arquivo: 1.248
-- Total de postagens analisadas: 1.248
-- Total offtopic: 184
-- Total repetidos: 67
-- Total relevantes: 997
-
-### Ranking para gráfico
-| Termo | Ocorrências | Percentual % |
-|---|---:|---:|
-| Aprovar com urgência | 312 | 31,3% |
-| Reforçar a fiscalização | 228 | 22,9% |
-| Proteger o público afetado | 184 | 18,5% |
-| Rever o impacto financeiro | 129 | 12,9% |
-| Ampliar o debate público | 81 | 8,1% |
-| Outras opiniões sobre o assunto | 63 | 6,3% |
-
-### Transparência
-Os sinônimos foram reunidos apenas quando mantinham a mesma direção do argumento. Textos idênticos do mesmo autor foram contados uma vez.`;
-
 const qualitative = Array.from(
   { length: 18 },
   (_, index) =>
@@ -30,10 +10,7 @@ const qualitative = Array.from(
 ).join("\n\n");
 
 const bytes = await generateReportPdf({
-  projectName: "PL 1234/2026 - Projeto de demonstração",
-  generatedAt: new Date("2026-08-25T12:00:00-03:00"),
   sections: [
-    { title: "Classificação, contagens e ranking", content: ranking },
     { title: "Análise qualitativa dos argumentos", content: qualitative },
     {
       title: "O que dizem",
@@ -68,4 +45,3 @@ await mkdir(directory, { recursive: true });
 const output = resolve(directory, "Relatorio_Validacao_Visual.pdf");
 await writeFile(output, bytes);
 console.log(output);
-

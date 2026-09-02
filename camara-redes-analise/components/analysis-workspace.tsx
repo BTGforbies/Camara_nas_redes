@@ -32,10 +32,19 @@ import {
   useState,
 } from "react";
 
-import { groupByCharacterLimit, wrapPartialResults } from "@/lib/batching";
+import {
+  aggregateAnalysis,
+  buildClassificationBatches,
+  compactProjectForAi,
+  knownThemeNames,
+  prepareWorkbookAnalysis,
+  renderAutomaticTables,
+} from "@/lib/local-analysis";
 import type {
+  AnalysisSummary,
   AnalysisSectionId,
   AnalysisSectionResult,
+  ClassifiedRecord,
   ProjectContext,
   WorkbookPayload,
 } from "@/lib/types";
@@ -46,16 +55,12 @@ import {
 } from "@/lib/types";
 import {
   DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
-  DEFAULT_MAX_CONTEXT_CHARACTERS,
   DEFAULT_MAX_FILE_SIZE_BYTES,
-  MIN_ANALYSIS_CHUNK_CHARACTERS,
   parseWorkbookArrayBuffer,
-  splitWorkbookContext,
 } from "@/lib/workbook";
 
 interface RuntimeLimits {
   maxFileMb: number;
-  maxContextCharacters: number;
   maxChunkCharacters: number;
 }
 
@@ -83,32 +88,32 @@ function isRequestTooLarge(error: unknown) {
   return error instanceof AnalysisRequestError && error.status === 413;
 }
 
-function safeInitialChunkLimit(configured: number) {
-  if (!Number.isFinite(configured)) return DEFAULT_ANALYSIS_CHUNK_CHARACTERS;
-  return Math.min(
-    Math.max(configured, MIN_ANALYSIS_CHUNK_CHARACTERS),
-    DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
-  );
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new AnalysisRequestError(
+      typeof payload.error === "string"
+        ? payload.error
+        : "Não foi possível concluir esta etapa.",
+      response.status,
+    );
+  }
+  return payload as T;
 }
 
-function splitRejectedChunk(contextText: string, providerMessage?: string) {
-  if (contextText.length <= MIN_ANALYSIS_CHUNK_CHARACTERS) {
+function splitRejectedBatch<T>(batch: T[]) {
+  if (batch.length < 2) {
     throw new Error(
-      providerMessage ||
-        "A API recusou até o menor lote automático. Aguarde um instante e tente novamente.",
+      "A Groq recusou uma postagem já compactada. Aguarde um instante e tente novamente.",
     );
   }
-  const smallerLimit = Math.max(
-    MIN_ANALYSIS_CHUNK_CHARACTERS,
-    Math.floor(contextText.length / 2),
-  );
-  const smallerChunks = splitWorkbookContext(contextText, smallerLimit);
-  if (smallerChunks.length < 2) {
-    throw new Error(
-      "Não foi possível reduzir automaticamente o lote recusado.",
-    );
-  }
-  return smallerChunks;
+  const middle = Math.ceil(batch.length / 2);
+  return [batch.slice(0, middle), batch.slice(middle)];
 }
 
 function visibleAnalysisContent(content: string) {
@@ -210,10 +215,10 @@ export default function AnalysisWorkspace() {
   const [project, setProject] = useState<ProjectContext>(EMPTY_PROJECT_CONTEXT);
   const [runtimeLimits, setRuntimeLimits] = useState<RuntimeLimits>({
     maxFileMb: DEFAULT_MAX_FILE_SIZE_BYTES / 1024 / 1024,
-    maxContextCharacters: DEFAULT_MAX_CONTEXT_CHARACTERS,
     maxChunkCharacters: DEFAULT_ANALYSIS_CHUNK_CHARACTERS,
   });
   const [sections, setSections] = useState<AnalysisSectionResult[]>(newSectionResults);
+  const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [generationError, setGenerationError] = useState("");
@@ -291,12 +296,12 @@ export default function AnalysisWorkspace() {
         { fileName: file.name, fileSize: file.size },
         {
           maxFileSize: runtimeLimits.maxFileMb * 1024 * 1024,
-          maxContextCharacters: runtimeLimits.maxContextCharacters,
         },
       );
       setWorkbook(parsed);
       setUploadStatus("done");
       setSections(newSectionResults());
+      setAnalysisSummary(null);
       setChatMessages({});
       setActiveChatId(null);
       invalidateFinal();
@@ -317,6 +322,7 @@ export default function AnalysisWorkspace() {
     setUploadStatus("idle");
     setUploadError("");
     setSections(newSectionResults());
+    setAnalysisSummary(null);
     setChatMessages({});
     setActiveChatId(null);
     setCurrentStep(1);
@@ -326,169 +332,11 @@ export default function AnalysisWorkspace() {
 
   const updateProject = (field: keyof ProjectContext, value: string) => {
     setProject((current) => ({ ...current, [field]: value }));
-    setSections((current) => current.map((item) => ({ ...item, validated: false })));
+    setSections(newSectionResults());
+    setAnalysisSummary(null);
+    setChatMessages({});
+    setActiveChatId(null);
     invalidateFinal();
-  };
-
-  const requestSection = async (
-    sectionId: AnalysisSectionId,
-    previousResults: Partial<Record<AnalysisSectionId, string>>,
-  ) => {
-    if (!workbook) throw new Error("Anexe um arquivo CSV ou Excel antes de continuar.");
-
-    const postRequest = async (
-      contextText: string,
-      chunk?: {
-        index: number;
-        total: number;
-        aggregation: boolean;
-        finalAggregation: boolean;
-      },
-    ) => {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sectionId,
-          project,
-          workbook: {
-            fileName: workbook.fileName,
-            totalSheets: workbook.totalSheets,
-            usableSheets: workbook.usableSheets,
-            recordCount: workbook.recordCount,
-            duplicateCount: workbook.duplicateCount,
-            corruptedCount: workbook.corruptedCount,
-            warnings: workbook.warnings,
-            contextText,
-          },
-          previousResults,
-          chunk,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new AnalysisRequestError(
-          payload.error || "Não foi possível gerar esta resposta.",
-          response.status,
-        );
-      }
-      return String(payload.content || "").trim();
-    };
-
-    if (sectionId !== "classification") {
-      return postRequest("Base consolidada no comando 1.");
-    }
-
-    const initialLimit = safeInitialChunkLimit(
-      runtimeLimits.maxChunkCharacters,
-    );
-    const chunks = splitWorkbookContext(
-      workbook.contextText,
-      initialLimit,
-    );
-    const partialResults: string[] = [];
-    try {
-      for (let index = 0; index < chunks.length;) {
-        setBatchProgress({ current: index + 1, total: chunks.length });
-        try {
-          partialResults.push(
-            await postRequest(chunks[index], {
-              index: index + 1,
-              total: chunks.length,
-              aggregation: false,
-              finalAggregation: false,
-            }),
-          );
-          index += 1;
-        } catch (error) {
-          if (!isRequestTooLarge(error)) throw error;
-          const smallerChunks = splitRejectedChunk(
-            chunks[index],
-            error instanceof AnalysisRequestError ? error.message : undefined,
-          );
-          chunks.splice(index, 1, ...smallerChunks);
-          setBatchProgress({ current: index + 1, total: chunks.length });
-        }
-      }
-      setBatchProgress({ current: chunks.length, total: chunks.length });
-      let consolidationLevel = partialResults;
-      let aggregationLimit = initialLimit;
-      while (consolidationLevel.length > 1) {
-        const groups = groupByCharacterLimit(
-          consolidationLevel,
-          aggregationLimit,
-        );
-        if (groups.length >= consolidationLevel.length) {
-          throw new Error(
-            "Os resultados parciais não puderam ser reduzidos com segurança.",
-          );
-        }
-
-        if (groups.length === 1) {
-          try {
-            return await postRequest(wrapPartialResults(groups[0]), {
-              index: 1,
-              total: 1,
-              aggregation: true,
-              finalAggregation: true,
-            });
-          } catch (error) {
-            if (!isRequestTooLarge(error)) throw error;
-            const smallerLimit = Math.max(
-              MIN_ANALYSIS_CHUNK_CHARACTERS,
-              Math.floor(aggregationLimit / 2),
-            );
-            if (smallerLimit === aggregationLimit) {
-              throw new Error(
-                "A consolidação mínima foi recusada pela API. Tente novamente em instantes.",
-              );
-            }
-            aggregationLimit = smallerLimit;
-            continue;
-          }
-        }
-
-        const nextLevel: string[] = [];
-        let retryWithSmallerGroups = false;
-        for (let index = 0; index < groups.length; index += 1) {
-          try {
-            nextLevel.push(
-              await postRequest(wrapPartialResults(groups[index]), {
-                index: index + 1,
-                total: groups.length,
-                aggregation: true,
-                finalAggregation: false,
-              }),
-            );
-          } catch (error) {
-            if (!isRequestTooLarge(error)) throw error;
-            const smallerLimit = Math.max(
-              MIN_ANALYSIS_CHUNK_CHARACTERS,
-              Math.floor(aggregationLimit / 2),
-            );
-            if (smallerLimit === aggregationLimit) {
-              throw new Error(
-                "A consolidação mínima foi recusada pela API. Tente novamente em instantes.",
-              );
-            }
-            aggregationLimit = smallerLimit;
-            retryWithSmallerGroups = true;
-            break;
-          }
-        }
-        if (retryWithSmallerGroups) continue;
-        consolidationLevel = nextLevel;
-      }
-
-      return postRequest(wrapPartialResults(consolidationLevel), {
-        index: 1,
-        total: 1,
-        aggregation: true,
-        finalAggregation: true,
-      });
-    } finally {
-      setBatchProgress(null);
-    }
   };
 
   const runSequence = async (reset: boolean) => {
@@ -498,44 +346,130 @@ export default function AnalysisWorkspace() {
     setCurrentStep(3);
     setActiveChatId(null);
     invalidateFinal();
-    const working = reset ? newSectionResults() : sections.map((item) => ({ ...item, validated: false }));
+    const working = reset
+      ? newSectionResults()
+      : sections.map((item) => ({
+          ...item,
+          validated: false,
+          error: undefined,
+        }));
     if (reset) {
       setSections(working);
       setChatMessages({});
+      setAnalysisSummary(null);
     }
-    const previousResults: Partial<Record<AnalysisSectionId, string>> = {};
+    let summary = reset ? null : analysisSummary;
     try {
-      for (const definition of SECTION_DEFINITIONS) {
-        const index = working.findIndex((item) => item.id === definition.id);
-        if (!reset && working[index].status === "done" && working[index].content) {
-          previousResults[definition.id] = working[index].content;
-          continue;
-        }
-        working[index] = { ...working[index], status: "running", error: undefined };
+      if (!summary) {
+        const classificationIndex = working.findIndex(
+          (item) => item.id === "classification",
+        );
+        working[classificationIndex] = {
+          ...working[classificationIndex],
+          status: "running",
+          content: "",
+          error: undefined,
+        };
         setSections(working.map((item) => ({ ...item })));
+        const prepared = prepareWorkbookAnalysis(workbook);
+        const batches = buildClassificationBatches(
+          prepared.records,
+          runtimeLimits.maxChunkCharacters,
+        );
+        const classifications: ClassifiedRecord[] = [];
+        const compactProject = compactProjectForAi(project);
+
         try {
-          const content = await requestSection(definition.id, previousResults);
+          for (let index = 0; index < batches.length;) {
+            setBatchProgress({ current: index + 1, total: batches.length });
+            try {
+              const payload = await postJson<{
+                classifications: ClassifiedRecord[];
+              }>("/api/classify", {
+                subject: compactProject.subject,
+                context: compactProject.context,
+                knownThemes: knownThemeNames(classifications),
+                records: batches[index],
+              });
+              classifications.push(...payload.classifications);
+              index += 1;
+            } catch (error) {
+              if (!isRequestTooLarge(error)) throw error;
+              batches.splice(index, 1, ...splitRejectedBatch(batches[index]));
+            }
+          }
+        } finally {
+          setBatchProgress(null);
+        }
+
+        summary = aggregateAnalysis(prepared, classifications);
+        setAnalysisSummary(summary);
+        const automaticContent = renderAutomaticTables(summary);
+        working[classificationIndex] = {
+          ...working[classificationIndex],
+          content: automaticContent,
+          originalContent: automaticContent,
+          status: "done",
+          edited: false,
+          validated: false,
+          error: undefined,
+        };
+        setSections(working.map((item) => ({ ...item })));
+      }
+
+      for (const sectionId of REPORT_SECTION_IDS) {
+        const index = working.findIndex((item) => item.id === sectionId);
+        working[index] = {
+          ...working[index],
+          status: "running",
+          validated: false,
+          error: undefined,
+        };
+      }
+      setSections(working.map((item) => ({ ...item })));
+
+      const payload = await postJson<{
+        sections?: Partial<Record<AnalysisSectionId, string>>;
+      }>("/api/report", {
+        project: compactProjectForAi(project),
+        summary,
+      });
+
+      for (const sectionId of REPORT_SECTION_IDS) {
+        const index = working.findIndex((item) => item.id === sectionId);
+        const content = String(payload.sections?.[sectionId] || "").trim();
+        if (!content) {
+          throw new Error("A Groq não retornou todas as respostas do relatório.");
+        }
+        working[index] = {
+          ...working[index],
+          content,
+          originalContent: content,
+          status: "done",
+          edited: false,
+          validated: false,
+          error: undefined,
+        };
+      }
+      setSections(working.map((item) => ({ ...item })));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "A geração foi interrompida. Seus dados foram preservados.";
+      for (let index = 0; index < working.length; index += 1) {
+        if (working[index].status === "running") {
           working[index] = {
             ...working[index],
-            content,
-            originalContent: content,
-            status: "done",
-            edited: false,
-            validated: false,
-            error: undefined,
+            status: "error",
+            error: message,
           };
-          previousResults[definition.id] = content;
-          setSections(working.map((item) => ({ ...item })));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Falha durante a geração.";
-          working[index] = { ...working[index], status: "error", error: message };
-          setSections(working.map((item) => ({ ...item })));
-          throw new Error(message);
         }
       }
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "A geração foi interrompida. Seus dados foram preservados.");
+      setSections(working.map((item) => ({ ...item })));
+      setGenerationError(message);
     } finally {
+      setBatchProgress(null);
       setBusy(false);
     }
   };
@@ -567,7 +501,7 @@ export default function AnalysisWorkspace() {
           sectionId: activeChatId,
           currentContent: activeChatSection.content,
           instruction,
-          history,
+          history: history.slice(-6),
         }),
       });
       const payload = await response.json().catch(() => ({}));

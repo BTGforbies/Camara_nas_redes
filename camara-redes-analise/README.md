@@ -1,66 +1,70 @@
 # Câmara nas Redes - Análise de Propostas
 
-Sistema para ler bases em CSV ou Excel, gerar respostas com IA, revisar cada texto em uma conversa assistida e criar um PDF A4 cru somente com as respostas validadas.
+Sistema para ler bases em CSV ou Excel, classificar argumentos com a Groq, revisar cada texto em uma conversa assistida e criar um PDF A4 somente com as respostas validadas.
 
-## O que funciona
+## Fluxo econômico
 
-- Upload de `.csv`, `.xlsx` e `.xls`;
-- Leitura de todas as tabelas utilizáveis e detecção de registros repetidos;
-- Formulário com nome do projeto, ficha de tramitação, situação, assunto, contexto e quadro de engajamento por canal;
-- Geração sequencial dos sete comandos pela API do Google Gemini;
-- Modelo econômico para classificação em lotes e modelo qualitativo para ranking, textos e chat;
-- Exibição das cinco respostas principais antes da conferência final;
-- Chat lateral assistido para ajustar uma resposta, sem edição manual;
-- Validação individual obrigatória de cada resposta;
-- PDF A4 sem capa, cabeçalho, rodapé, métricas ou resultados intermediários.
+1. O navegador valida e lê o arquivo.
+2. Repetições, linhas corrompidas, somas, percentuais, canais e autores são processados localmente, sem tokens.
+3. Somente textos compactos e com identificadores óbvios removidos são classificados em lotes pequenos pelo modelo **openai/gpt-oss-20b**.
+4. As duas tabelas são montadas localmente e não exigem conversa nem validação manual.
+5. Um único pedido ao **openai/gpt-oss-120b** gera o ranking e os cinco textos finais.
+6. O chat envia somente a resposta em revisão e as últimas mensagens, nunca a planilha.
+7. O PDF recebe o ranking e os cinco textos validados.
+
+Não é usado **groq/compound**, busca web, execução de código ou qualquer ferramenta externa do modelo.
 
 ## Rodar no GitHub Codespaces
 
-No terminal, dentro da pasta `camara-redes-analise`, execute:
+Crie uma chave em [Groq API Keys](https://console.groq.com/keys). No terminal, dentro de **camara-redes-analise**, execute:
 
 ```bash
 npm install
-cp .env.example .env.local
+test -f .env.local || cp .env.example .env.local
+code .env.local
 ```
 
-Abra `.env.local` e preencha:
+No arquivo **.env.local**, deixe:
 
 ```env
-GEMINI_API_KEY=sua_chave_gemini
-GEMINI_BULK_MODEL=gemini-3.5-flash-lite
-GEMINI_QUALITY_MODEL=gemini-3.6-flash
+GROQ_API_KEY=gsk_SUA_CHAVE
+GROQ_BULK_MODEL=openai/gpt-oss-20b
+GROQ_QUALITY_MODEL=openai/gpt-oss-120b
 ```
 
-Depois, inicie:
+Salve o arquivo e inicie:
 
 ```bash
-npm run dev -- --host 0.0.0.0
+pkill -f "vite --host" || true
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Quando o Codespaces detectar a porta, mantenha-a privada e clique em **Abrir no navegador**. Não digite o conteúdo do `.env.local` diretamente no terminal e nunca envie esse arquivo ao GitHub.
+Abra a porta **5173** pela aba **Portas** do Codespaces. Mantenha a porta privada. Não digite a chave diretamente no terminal e nunca envie **.env.local** ao GitHub.
+
+## Privacidade
+
+- A chave permanece no backend.
+- O arquivo original permanece no navegador e não é enviado ao servidor.
+- Os lotes não contêm coluna de autor, canal, engajamento, URL ou outras colunas da planilha.
+- URL, e-mail, telefone, CPF e identificadores iniciados por @ são removidos dos textos antes do envio.
+- Cada texto enviado possui no máximo 900 caracteres e usa um id neutro, como P000001.
+- Somente nomes agregados dos autores de maior destaque, sem ligação com postagens individuais, seguem para a redação de “Quem mobilizou”.
+- A aplicação não possui banco de dados nem grava o arquivo, prompts ou respostas no servidor.
+
+Para maior proteção, um administrador da organização deve ativar **Zero Data Retention** em [Groq Data Controls](https://console.groq.com/settings/data-controls). A remoção automática de identificadores reduz exposição, mas não substitui revisão institucional quando a base contiver dados pessoais sensíveis em linguagem livre.
 
 ## Variáveis
 
 | Variável | Uso | Padrão |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Chave da API Google Gemini | sem valor |
-| `GEMINI_BULK_MODEL` | Modelo econômico para classificação e consolidação | `gemini-3.5-flash-lite` |
-| `GEMINI_QUALITY_MODEL` | Modelo para ranking, textos finais e chat | `gemini-3.6-flash` |
-| `GEMINI_BULK_THINKING_LEVEL` | Nível de raciocínio na classificação | `minimal` |
-| `GEMINI_QUALITY_THINKING_LEVEL` | Nível de raciocínio nas respostas qualitativas | `low` |
-| `AI_REQUEST_TIMEOUT_MS` | Tempo máximo de cada chamada | `240000` |
-| `AI_MAX_CONTEXT_CHARS` | Limite do contexto processável | `10000000` |
-| `NEXT_PUBLIC_AI_CHUNK_CHARS` | Tamanho inicial dos lotes automáticos | `20000` |
-| `NEXT_PUBLIC_MAX_FILE_MB` | Limite do CSV ou Excel | `25` |
-
-## Fluxo
-
-1. O navegador valida e lê o CSV ou Excel.
-2. O backend usa o Flash-Lite na classificação e o Flash nas etapas qualitativas. A chave nunca é enviada ao navegador.
-3. O sistema exibe cinco respostas principais: O que dizem, Canal de destaque, Quem mobilizou, O que mobilizou e Resumo executivo.
-4. O usuário pode usar o chat assistido para ajustar cada resposta.
-5. Cada resposta precisa ser validada individualmente.
-6. O PDF recebe somente as cinco respostas validadas.
+| GROQ_API_KEY | Chave da Groq Cloud | sem valor |
+| GROQ_BULK_MODEL | Classificação econômica | openai/gpt-oss-20b |
+| GROQ_QUALITY_MODEL | Ranking, textos e chat | openai/gpt-oss-120b |
+| AI_REQUEST_TIMEOUT_MS | Tempo máximo por chamada | 180000 |
+| AI_MAX_COMPLETION_TOKENS | Teto de saída | 5000 |
+| AI_MAX_REQUEST_BYTES | Limite local de cada requisição | 250000 |
+| NEXT_PUBLIC_AI_CHUNK_CHARS | Tamanho-alvo do lote compacto | 10000 |
+| NEXT_PUBLIC_MAX_FILE_MB | Limite do arquivo | 25 |
 
 ## Comandos
 
@@ -73,4 +77,4 @@ npm test             # testes completos
 npm run test:unit    # testes rápidos
 ```
 
-As chamadas reais ao provedor de IA não fazem parte dos testes automatizados para evitar consumo de cota.
+As chamadas reais à Groq não fazem parte dos testes automatizados, portanto os testes não consomem créditos.

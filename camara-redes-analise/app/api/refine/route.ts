@@ -1,13 +1,13 @@
 import { z } from "zod";
 
-import { generateText } from "@/lib/ai";
+import { generateText, ProviderError } from "@/lib/ai";
 import { normalizeQualitativeRanking } from "@/lib/analysis-format";
 import { ANALYSIS_SYSTEM_INSTRUCTIONS } from "@/lib/prompts";
 import { REPORT_SECTION_IDS, SECTION_DEFINITIONS } from "@/lib/types";
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
-  content: z.string().trim().min(1).max(8_000),
+  content: z.string().trim().min(1).max(2_000),
 });
 
 const requestSchema = z.object({
@@ -19,10 +19,20 @@ const requestSchema = z.object({
     "whatMobilized",
     "executiveSummary",
   ]),
-  currentContent: z.string().trim().min(1).max(120_000),
-  instruction: z.string().trim().min(1).max(8_000),
-  history: z.array(messageSchema).max(20).default([]),
+  currentContent: z.string().trim().min(1).max(12_000),
+  instruction: z.string().trim().min(1).max(2_000),
+  history: z.array(messageSchema).max(8).default([]),
 });
+
+const refinementJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    message: { type: "string", maxLength: 500 },
+    revisedContent: { type: "string", maxLength: 12_000 },
+  },
+  required: ["message", "revisedContent"],
+};
 
 function parseAiResponse(value: string) {
   const cleaned = value
@@ -56,9 +66,10 @@ export async function POST(request: Request) {
     if (!definition) throw new Error("Seção de resposta inválida.");
 
     const history = body.history
+      .slice(-6)
       .map((item) => `${item.role === "user" ? "USUÁRIO" : "ASSISTENTE"}: ${item.content}`)
       .join("\n\n");
-    const limit = definition.characterLimit ?? 4_000;
+    const limit = definition.characterLimit ?? 10_000;
     const generated = await generateText({
       instructions: `${ANALYSIS_SYSTEM_INSTRUCTIONS}\n\nVocê também atua como editor. Ajude o usuário a aperfeiçoar uma resposta já gerada sem inventar fatos.`,
       input: `
@@ -80,6 +91,11 @@ Responda somente com JSON válido, sem bloco markdown, exatamente neste formato:
 A versão revisada deve obedecer ao limite, preservar o sentido editorial da seção, usar português do Brasil e nunca acrescentar dados ausentes.
       `.trim(),
       purpose: "quality",
+      jsonSchema: {
+        name: "revisao_resposta",
+        schema: refinementJsonSchema,
+      },
+      maxCompletionTokens: 3_000,
       signal: request.signal,
     });
     const result = parseAiResponse(generated.text);
@@ -94,6 +110,9 @@ A versão revisada deve obedecer ao limite, preservar o sentido editorial da se�
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json({ error: "A solicitação de revisão está incompleta." }, { status: 400 });
+    }
+    if (error instanceof ProviderError) {
+      return Response.json({ error: error.message }, { status: error.status });
     }
     return Response.json(
       { error: error instanceof Error ? error.message : "Não foi possível revisar a resposta." },
