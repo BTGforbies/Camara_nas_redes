@@ -57,6 +57,52 @@ test("rota de classificação valida todos os ids do lote", async () => {
   }
 });
 
+test("classificação relevante sem argumento recebe tema geral e não interrompe", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = "gsk_teste_local";
+  globalThis.fetch = async () =>
+    Response.json({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              items: [
+                {
+                  id: "P000021",
+                  status: "RELEVANTE",
+                  stance: "NEGATIVO",
+                  themes: [],
+                },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+
+  try {
+    const response = await classifyPost(
+      request("/api/classify", {
+        subject: "Assunto",
+        context: "Contexto",
+        knownThemes: [],
+        records: [{ id: "P000021", text: "Isso não resolve o problema." }],
+      }),
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.classifications[0].themes, [
+      "Crítica geral ao assunto",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = originalKey;
+  }
+});
+
 test("rota final fixa números, caixa alta e postagem original", async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.GROQ_API_KEY;

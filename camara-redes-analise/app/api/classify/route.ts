@@ -66,6 +66,12 @@ function cleanTheme(value: string) {
     .slice(0, 48);
 }
 
+function fallbackTheme(stance: "POSITIVO" | "NEGATIVO" | "NEUTRO") {
+  if (stance === "POSITIVO") return "Apoio geral ao assunto";
+  if (stance === "NEGATIVO") return "Crítica geral ao assunto";
+  return "Menção geral ao assunto";
+}
+
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
@@ -98,10 +104,10 @@ export async function POST(request: Request) {
         return { ...item, stance: "NEUTRO" as const, themes: [] };
       }
       const themes = [...new Set(item.themes.map(cleanTheme).filter(Boolean))];
-      if (!themes.length) {
-        throw new Error(`A postagem ${item.id} foi marcada como relevante sem argumento.`);
-      }
-      return { ...item, themes };
+      return {
+        ...item,
+        themes: themes.length ? themes : [fallbackTheme(item.stance)],
+      };
     });
 
     return Response.json(
