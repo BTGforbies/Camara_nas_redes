@@ -37,8 +37,10 @@ import {
   buildClassificationBatches,
   compactProjectForAi,
   knownThemeNames,
+  mergeSourceReferences,
   prepareWorkbookAnalysis,
   renderAutomaticTables,
+  sourceReferencesFromText,
 } from "@/lib/local-analysis";
 import type {
   AnalysisSummary,
@@ -46,6 +48,7 @@ import type {
   AnalysisSectionResult,
   ClassifiedRecord,
   ProjectContext,
+  SourceContext,
   WorkbookPayload,
 } from "@/lib/types";
 import {
@@ -204,6 +207,34 @@ function localPdfName(projectName: string) {
   return `Respostas_${normalized}_${new Date().toISOString().slice(0, 10)}.pdf`;
 }
 
+function refinementEvidence(
+  sectionId: AnalysisSectionId,
+  summary: AnalysisSummary | null,
+  sources: SourceContext[],
+) {
+  if (!summary) return "";
+  const shared = { metrics: summary.metrics, stances: summary.stances };
+
+  if (sectionId === "featuredChannel") {
+    return JSON.stringify({ ...shared, channels: summary.channels });
+  }
+  if (sectionId === "whoMobilized") {
+    return JSON.stringify({ ...shared, authors: summary.authors });
+  }
+  if (sectionId === "qualitative") {
+    return JSON.stringify({ ...shared, mainArguments: summary.themes });
+  }
+  return JSON.stringify({
+    ...shared,
+    arguments: summary.argumentOverview,
+    channels: summary.channels,
+    authors: summary.authors,
+    sources: sectionId === "whatMobilized" || sectionId === "executiveSummary"
+      ? sources
+      : [],
+  });
+}
+
 export default function AnalysisWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -219,6 +250,7 @@ export default function AnalysisWorkspace() {
   });
   const [sections, setSections] = useState<AnalysisSectionResult[]>(newSectionResults);
   const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
+  const [sourceContexts, setSourceContexts] = useState<SourceContext[]>([]);
   const [busy, setBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [generationError, setGenerationError] = useState("");
@@ -302,6 +334,7 @@ export default function AnalysisWorkspace() {
       setUploadStatus("done");
       setSections(newSectionResults());
       setAnalysisSummary(null);
+      setSourceContexts([]);
       setChatMessages({});
       setActiveChatId(null);
       invalidateFinal();
@@ -323,6 +356,7 @@ export default function AnalysisWorkspace() {
     setUploadError("");
     setSections(newSectionResults());
     setAnalysisSummary(null);
+    setSourceContexts([]);
     setChatMessages({});
     setActiveChatId(null);
     setCurrentStep(1);
@@ -334,6 +368,7 @@ export default function AnalysisWorkspace() {
     setProject((current) => ({ ...current, [field]: value }));
     setSections(newSectionResults());
     setAnalysisSummary(null);
+    setSourceContexts([]);
     setChatMessages({});
     setActiveChatId(null);
     invalidateFinal();
@@ -357,9 +392,26 @@ export default function AnalysisWorkspace() {
       setSections(working);
       setChatMessages({});
       setAnalysisSummary(null);
+      setSourceContexts([]);
     }
     let summary = reset ? null : analysisSummary;
+    let reportSources = reset ? [] : sourceContexts;
     try {
+      const prepared = prepareWorkbookAnalysis(workbook);
+      const explicitSources = mergeSourceReferences(
+        sourceReferencesFromText(project.progressSheet),
+        sourceReferencesFromText(project.context),
+      );
+      const explicitUrls = new Set(explicitSources.map((source) => source.url));
+      const mergedSources = mergeSourceReferences(
+        prepared.sources,
+        explicitSources,
+      );
+      const sourceReferences = [
+        ...mergedSources.filter((source) => explicitUrls.has(source.url)),
+        ...mergedSources.filter((source) => !explicitUrls.has(source.url)),
+      ].slice(0, 12);
+
       if (!summary) {
         const classificationIndex = working.findIndex(
           (item) => item.id === "classification",
@@ -371,7 +423,6 @@ export default function AnalysisWorkspace() {
           error: undefined,
         };
         setSections(working.map((item) => ({ ...item })));
-        const prepared = prepareWorkbookAnalysis(workbook);
         const batches = buildClassificationBatches(
           prepared.records,
           runtimeLimits.maxChunkCharacters,
@@ -417,6 +468,19 @@ export default function AnalysisWorkspace() {
         setSections(working.map((item) => ({ ...item })));
       }
 
+      if (!reportSources.length && sourceReferences.length) {
+        try {
+          const sourcePayload = await postJson<{ contexts?: SourceContext[] }>(
+            "/api/source-context",
+            { sources: sourceReferences },
+          );
+          reportSources = sourcePayload.contexts ?? [];
+          setSourceContexts(reportSources);
+        } catch {
+          reportSources = [];
+        }
+      }
+
       for (const sectionId of REPORT_SECTION_IDS) {
         const index = working.findIndex((item) => item.id === sectionId);
         working[index] = {
@@ -433,6 +497,7 @@ export default function AnalysisWorkspace() {
       }>("/api/report", {
         project: compactProjectForAi(project),
         summary,
+        sources: reportSources,
       });
 
       for (const sectionId of REPORT_SECTION_IDS) {
@@ -502,6 +567,11 @@ export default function AnalysisWorkspace() {
           currentContent: activeChatSection.content,
           instruction,
           history: history.slice(-6),
+          evidence: refinementEvidence(
+            activeChatId,
+            analysisSummary,
+            sourceContexts,
+          ).slice(0, 28_000),
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -641,7 +711,7 @@ export default function AnalysisWorkspace() {
           {currentStep === 1 && (
             <section className="stage" aria-labelledby="upload-title">
               <div className="stage-heading">
-                <div><span className="section-kicker">01 · Proposta</span><h2 id="upload-title">Anexe a base de postagens</h2><p>O sistema valida arquivos CSV ou Excel, lê todas as tabelas utilizáveis e organiza os registros antes da análise.</p></div>
+                <div><span className="section-kicker">01 · Proposta</span><h2 id="upload-title">Anexe a base de postagens</h2><p>O sistema lê todas as postagens e comentários utilizáveis, além de reconhecer colunas de link e título.</p></div>
                 <span className="format-chip">CSV / XLSX / XLS · até {runtimeLimits.maxFileMb} MB</span>
               </div>
               {!workbook && (
@@ -692,7 +762,7 @@ export default function AnalysisWorkspace() {
                   <div className="form-section-heading"><h3>Informações essenciais</h3><span>6 campos</span></div>
                   <div className="form-grid">
                     <label className="span-2"><span>Nome do projeto *</span><input className={fieldClass(project.projectName, true)} value={project.projectName} onChange={(event) => updateProject("projectName", event.target.value)} placeholder="Ex.: PL 1234/2026" maxLength={240} /></label>
-                    <label className="span-2"><span>Ficha de tramitação</span><textarea className="field-input" value={project.progressSheet} onChange={(event) => updateProject("progressSheet", event.target.value)} placeholder="Cole o link ou as principais informações da ficha de tramitação." rows={3} maxLength={12000} /></label>
+                    <label className="span-2"><span>Ficha de tramitação</span><textarea className="field-input" value={project.progressSheet} onChange={(event) => updateProject("progressSheet", event.target.value)} placeholder="Cole o link ou as principais informações da ficha de tramitação." rows={3} maxLength={12000} /><small>Links públicos deste campo e da planilha serão consultados para contextualizar “O que mobilizou”.</small></label>
                     <label><span>Situação</span><textarea className="field-input" value={project.situation} onChange={(event) => updateProject("situation", event.target.value)} placeholder="Ex.: em discussão, votação prevista ou aguardando parecer." rows={3} maxLength={8000} /></label>
                     <label><span>Assunto *</span><textarea className={fieldClass(project.subject, true)} value={project.subject} onChange={(event) => updateProject("subject", event.target.value)} placeholder="Explique de forma objetiva o tema tratado pelo projeto." rows={3} maxLength={8000} /></label>
                     <label className="span-2"><span>Contexto *</span><textarea className={fieldClass(project.context, true)} value={project.context} onChange={(event) => updateProject("context", event.target.value)} placeholder="Descreva por que o projeto está sendo analisado neste período." rows={4} maxLength={12000} /></label>
@@ -708,7 +778,7 @@ export default function AnalysisWorkspace() {
           {currentStep === 3 && (
             <section className="stage generation-stage" aria-labelledby="generation-title">
               <div className="stage-heading">
-                <div><span className="section-kicker">03 · Geração e validação</span><h2 id="generation-title">Revise as respostas antes de avançar</h2><p>As duas tabelas aparecem automaticamente. A validação começa no ranking dos argumentos e continua nas cinco análises finais.</p></div>
+                <div><span className="section-kicker">03 · Geração e validação</span><h2 id="generation-title">Revise as respostas antes de avançar</h2><p>Todos os argumentos das postagens e comentários são considerados. A validação começa no ranking dos cinco mais frequentes.</p></div>
                 <div className="progress-number"><strong>{busy ? completedSections : validatedCount}</strong><span>{busy ? "/ 7 comandos" : "/ 6 validadas"}</span></div>
               </div>
               {busy && <><div className="generation-progress" aria-label={`${completedSections} de 7 comandos concluídos`}><span style={{ width: `${(completedSections / 7) * 100}%` }} /></div><div className="command-list">{sections.map((section) => <article key={section.id} className={`command-row ${section.status}`}><div className="command-status-icon">{section.status === "done" && <CheckCircle2 size={20} />}{section.status === "running" && <LoaderCircle className="spin" size={20} />}{section.status === "error" && <AlertCircle size={20} />}{section.status === "idle" && <span className="idle-dot" />}</div><div className="command-copy"><span>Comando {section.command}</span><strong>{section.title}</strong><small>{section.status === "running" ? batchProgress && section.id === "classification" ? `Analisando lote ${batchProgress.current} de ${batchProgress.total}...` : "Analisando os dados..." : section.status === "done" ? "Concluído" : section.status === "error" ? section.error : "Aguardando"}</small></div></article>)}</div></>}

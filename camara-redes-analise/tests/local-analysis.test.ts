@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 import {
   aggregateAnalysis,
   buildClassificationBatches,
+  extractPublicUrls,
+  mergeSourceReferences,
   parseEngagement,
   prepareWorkbookAnalysis,
   redactSensitiveText,
@@ -60,6 +62,8 @@ test("prepara lotes sem autor e remove identificadores óbvios", () => {
   assert.match(serialized, /\[link removido\]/);
   assert.match(serialized, /\[telefone removido\]/);
   assert.ok(prepared.records.every((record) => record.text.length <= 900));
+  assert.equal(prepared.sources[0].url, "https://example.com/post");
+  assert.equal(prepared.sources[0].occurrences, 2);
 });
 
 test("divide por tamanho e por no máximo vinte registros", () => {
@@ -111,6 +115,7 @@ test("calcula métricas, percentuais, canais e autores localmente", () => {
   assert.equal(summary.themes[0].name, "Apoio direto à proposta");
   assert.equal(summary.themes[0].count, 2);
   assert.equal(summary.themes[0].percentage, 100);
+  assert.equal(summary.argumentOverview.length, 2);
   assert.equal(summary.channels[0].name, "Facebook");
   assert.equal(summary.channels[0].posts, 2);
   assert.equal(summary.authors.length, 2);
@@ -119,6 +124,18 @@ test("calcula métricas, percentuais, canais e autores localmente", () => {
   assert.match(tables, /Total RELEVANTES \(base de cálculo\).*\*\*2\*\*/);
   assert.match(tables, /Apoio direto à proposta \| 2 \| 100,0%/);
   assert.match(tables, /Outras opiniões sobre o assunto/);
+});
+
+test("deduplica links e remove parâmetros de rastreamento", () => {
+  const links = extractPublicUrls(
+    "Veja https://noticias.example/materia?utm_source=rede&fbclid=abc e https://noticias.example/materia.",
+  );
+  const sources = mergeSourceReferences(
+    links.map((url) => ({ url, occurrences: 1 })),
+  );
+
+  assert.deepEqual(links, ["https://noticias.example/materia"]);
+  assert.equal(sources.length, 1);
 });
 
 test("normaliza pontos de engajamento e redações sensíveis", () => {

@@ -116,6 +116,13 @@ test("rota final fixa números, caixa alta e postagem original", async () => {
               ],
             },
           ],
+          argumentOverview: [
+            {
+              name: "apoio direto à proposta",
+              count: 2,
+              percentage: 100,
+            },
+          ],
           otherThemeOccurrences: 0,
           channels: [{ name: "Facebook", posts: 2, engagement: 50 }],
           authors: [{ name: "Página A", posts: 1, engagement: 50 }],

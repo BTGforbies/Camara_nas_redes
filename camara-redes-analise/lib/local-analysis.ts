@@ -4,6 +4,7 @@ import type {
   ClassifiedRecord,
   NamedAggregate,
   ProjectContext,
+  SourceReference,
   WorkbookPayload,
 } from "@/lib/types";
 import {
@@ -26,6 +27,7 @@ export interface LocalAnalysisRow extends AnalysisRecord {
 export interface PreparedWorkbookAnalysis {
   rows: LocalAnalysisRow[];
   records: AnalysisRecord[];
+  sources: SourceReference[];
 }
 
 function normalizeKey(value: string) {
@@ -70,6 +72,71 @@ function fallbackText(values: string[], ignoredIndexes: Set<number>) {
   }, "");
 }
 
+function normalizedPublicUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (
+        key.toLowerCase().startsWith('utm_') ||
+        ['fbclid', 'gclid', 'igshid', 'mc_cid', 'mc_eid'].includes(
+          key.toLowerCase(),
+        )
+      ) {
+        url.searchParams.delete(key);
+      }
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function extractPublicUrls(value: string) {
+  const matches = value.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+  const unique = new Set<string>();
+  for (const match of matches) {
+    const clean = match.replace(/[),.;!?]+$/g, '');
+    const normalized = normalizedPublicUrl(clean);
+    if (normalized) unique.add(normalized);
+  }
+  return [...unique];
+}
+
+export function mergeSourceReferences(
+  ...groups: SourceReference[][]
+): SourceReference[] {
+  const sources = new Map<string, SourceReference>();
+  for (const group of groups) {
+    for (const source of group) {
+      const url = normalizedPublicUrl(source.url);
+      if (!url) continue;
+      const current = sources.get(url) ?? {
+        url,
+        title: source.title?.trim() || undefined,
+        occurrences: 0,
+      };
+      current.occurrences += Math.max(1, source.occurrences || 1);
+      if (!current.title && source.title?.trim()) {
+        current.title = compactText(source.title, 180);
+      }
+      sources.set(url, current);
+    }
+  }
+  return [...sources.values()].sort(
+    (left, right) =>
+      right.occurrences - left.occurrences || left.url.localeCompare(right.url),
+  );
+}
+
+export function sourceReferencesFromText(value: string): SourceReference[] {
+  return extractPublicUrls(value).map((url) => ({
+    url,
+    occurrences: 1,
+  }));
+}
+
 export function parseEngagement(value: string) {
   const clean = value.trim().replace(/[^0-9,.-]/g, "");
   if (!clean) return 0;
@@ -100,6 +167,7 @@ export function prepareWorkbookAnalysis(
   workbook: WorkbookPayload,
 ): PreparedWorkbookAnalysis {
   const rows: LocalAnalysisRow[] = [];
+  const sourceReferences: SourceReference[] = [];
   let recordNumber = 0;
 
   for (const sheet of workbook.sheets) {
@@ -115,11 +183,17 @@ export function prepareWorkbookAnalysis(
     const engagementIndex = sheet.detectedColumns.engagement
       ? sheet.headers.indexOf(sheet.detectedColumns.engagement)
       : -1;
+    const linkIndex = sheet.detectedColumns.link
+      ? sheet.headers.indexOf(sheet.detectedColumns.link)
+      : -1;
+    const titleIndex = sheet.detectedColumns.title
+      ? sheet.headers.indexOf(sheet.detectedColumns.title)
+      : -1;
 
     for (const row of sheet.rows) {
       recordNumber += 1;
       const ignoredIndexes = new Set(
-        [authorIndex, channelIndex, engagementIndex].filter(
+        [authorIndex, channelIndex, engagementIndex, linkIndex].filter(
           (index) => index >= 0,
         ),
       );
@@ -133,6 +207,19 @@ export function prepareWorkbookAnalysis(
       );
       const corrupted = Boolean(row.corrupted) || !text;
       const duplicate = !corrupted && Boolean(row.duplicateOf);
+      const sourceTitle =
+        titleIndex >= 0 ? compactText(row.values[titleIndex] || '', 180) : '';
+      const rowLinks = new Set([
+        ...extractPublicUrls(originalText),
+        ...(linkIndex >= 0 ? extractPublicUrls(row.values[linkIndex] || '') : []),
+      ]);
+      for (const url of rowLinks) {
+        sourceReferences.push({
+          url,
+          title: sourceTitle || undefined,
+          occurrences: 1,
+        });
+      }
 
       rows.push({
         id: `P${String(recordNumber).padStart(6, "0")}`,
@@ -160,6 +247,7 @@ export function prepareWorkbookAnalysis(
     records: rows
       .filter((row) => !row.corrupted && !row.duplicate)
       .map(({ id, text }) => ({ id, text })),
+    sources: mergeSourceReferences(sourceReferences),
   };
 }
 
@@ -197,7 +285,7 @@ export function buildClassificationBatches(
 
 export function knownThemeNames(
   classifications: ClassifiedRecord[],
-  limit = 30,
+  limit = 80,
 ) {
   const themes = new Map<string, string>();
   for (const item of classifications) {
@@ -332,6 +420,11 @@ export function aggregateAnalysis(
     },
     stances,
     themes: topThemes,
+    argumentOverview: allThemes.map((theme) => ({
+      name: theme.name,
+      count: theme.count,
+      percentage: relevant ? (theme.count / relevant) * 100 : 0,
+    })),
     otherThemeOccurrences,
     channels: sortedAggregates(channels),
     authors: sortedAggregates(authors),
@@ -372,8 +465,8 @@ export function renderAutomaticTables(summary: AnalysisSummary) {
 | Total CORROMPIDA (sinalizada à parte) | ${metrics.corrupted} |
 | **Total RELEVANTES (base de cálculo)** | **${metrics.relevant}** |
 
-### Termos
-| Termo | Ocorrências | Percentual (%) |
+### Principais argumentos
+| Argumento | Ocorrências | Percentual (%) |
 |---|---:|---:|
 ${themeRows.join("\n")}`;
 }

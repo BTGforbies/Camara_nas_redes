@@ -4,8 +4,10 @@
 
 | Área | Cenários cobertos |
 | --- | --- |
-| CSV e Excel | `.csv`, `.xlsx`, `.xls`, ponto e vírgula, várias planilhas, repetidos, arquivo inválido, assinatura incompatível e limite de contexto |
-| Prompts | Ordem dos sete comandos, dependências, regras críticas e limite de 400 caracteres |
+| CSV e Excel | `.csv`, `.xlsx`, `.xls`, ponto e vírgula, várias planilhas, repetidos, arquivo inválido, assinatura incompatível, limite de contexto e reconhecimento de links/títulos |
+| Argumentos | Todos os registros, múltiplos argumentos por comentário, mapa completo e consolidação dos cinco principais |
+| Links públicos | Bloqueio de destinos locais, extração de título, descrição e trecho, limites e falha tolerante |
+| Prompts | Dependências, regras críticas, contexto das fontes e limite de 400 caracteres |
 | PDF | Criação A4 crua, múltiplas páginas e padronização do nome do arquivo |
 | Aplicação | Build de produção, resposta HTML, título correto e presença do fluxo de upload |
 

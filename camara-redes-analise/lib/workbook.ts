@@ -21,16 +21,16 @@ const AUTHOR_ALIASES = [
   "nome do autor",
 ];
 const TEXT_ALIASES = [
+  "full text",
+  "comment",
+  "comentario",
   "text",
   "texto",
   "content",
   "conteudo",
-  "post",
-  "postagem",
-  "comment",
-  "comentario",
   "mensagem",
-  "full text",
+  "postagem",
+  "post",
 ];
 const CHANNEL_ALIASES = [
   "channel",
@@ -48,6 +48,28 @@ const ENGAGEMENT_ALIASES = [
   "engajamento",
   "pontos de engajamento",
   "score",
+];
+const LINK_ALIASES = [
+  "url",
+  "link",
+  "post url",
+  "url da postagem",
+  "url da publicacao",
+  "url da publicação",
+  "source url",
+  "link da noticia",
+  "link da notícia",
+  "endereco da noticia",
+  "endereço da notícia",
+];
+const TITLE_ALIASES = [
+  "title",
+  "titulo",
+  "título",
+  "headline",
+  "manchete",
+  "titulo da noticia",
+  "título da notícia",
 ];
 
 function normalize(value: string) {
@@ -79,12 +101,15 @@ function ensureUniqueHeaders(values: unknown[]): string[] {
 
 function findColumn(headers: string[], aliases: string[]) {
   const normalizedAliases = aliases.map(normalize);
-  return headers.find((header) => {
-    const candidate = normalize(header);
-    return normalizedAliases.some(
-      (alias) => candidate === alias || candidate.includes(alias),
-    );
-  });
+  for (const alias of normalizedAliases) {
+    const exact = headers.find((header) => normalize(header) === alias);
+    if (exact) return exact;
+  }
+  for (const alias of normalizedAliases) {
+    const partial = headers.find((header) => normalize(header).includes(alias));
+    if (partial) return partial;
+  }
+  return undefined;
 }
 
 function isEmptyRow(row: unknown[]) {
@@ -173,6 +198,8 @@ function sheetFromMatrix(name: string, matrix: unknown[][]): WorkbookSheet | nul
     text: findColumn(headers, TEXT_ALIASES),
     channel: findColumn(headers, CHANNEL_ALIASES),
     engagement: findColumn(headers, ENGAGEMENT_ALIASES),
+    link: findColumn(headers, LINK_ALIASES),
+    title: findColumn(headers, TITLE_ALIASES),
   };
 
   const rows: WorkbookRow[] = nonEmptyRows.slice(1).map((row, index) => ({

@@ -50,14 +50,33 @@ const summarySchema = z.object({
       }),
     )
     .max(5),
+  argumentOverview: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(48),
+        count: z.number().int().positive(),
+        percentage: z.number().finite().nonnegative(),
+      }),
+    )
+    .max(500),
   otherThemeOccurrences: z.number().int().nonnegative(),
   channels: z.array(namedAggregateSchema).max(10),
   authors: z.array(namedAggregateSchema).max(10),
 });
 
+const sourceContextSchema = z.object({
+  domain: z.string().trim().min(1).max(253),
+  title: z.string().trim().max(180),
+  description: z.string().trim().max(400),
+  excerpt: z.string().trim().max(1_200),
+  occurrences: z.number().int().positive().max(100_000),
+  available: z.boolean(),
+});
+
 const requestSchema = z.object({
   project: projectSchema,
   summary: summarySchema,
+  sources: z.array(sourceContextSchema).max(12).default([]),
 });
 
 const generatedSchema = z.object({

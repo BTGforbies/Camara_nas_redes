@@ -2,6 +2,7 @@ import type {
   AnalysisRecord,
   AnalysisSummary,
   ProjectContext,
+  SourceContext,
 } from "@/lib/types";
 
 export const ANALYSIS_SYSTEM_INSTRUCTIONS = `
@@ -46,8 +47,10 @@ CRITÉRIOS
 - RELEVANTE: trata do assunto ou de consequência direta da proposta.
 - OFFTOPIC: assunto alheio, política genérica, spam, ofensa sem argumento ou texto incompreensível.
 - Para cada RELEVANTE, indique POSITIVO, NEGATIVO ou NEUTRO.
-- Para cada RELEVANTE, extraia um ou dois argumentos completos. Cada nome deve ter até 48 caracteres.
+- Para cada RELEVANTE, extraia todos os argumentos distintos expressos no texto, inclusive quando houver apoio, crítica, cobrança, dúvida, relato pessoal ou pedido de ampliação na mesma postagem.
+- Não transforme exemplos, adjetivos ou frases equivalentes em argumentos separados. Cada nome deve ter até 48 caracteres.
 - Reutilize um tema anterior somente quando ideia e direção forem equivalentes. Não una apoio e crítica.
+- Conte cada argumento no máximo uma vez por postagem.
 - OFFTOPIC deve ter posição NEUTRO e lista de temas vazia.
 - Preserve exatamente o id recebido.
 
@@ -62,6 +65,7 @@ Retorne somente o objeto JSON solicitado pelo sistema.
 export function buildReportPrompt(input: {
   project: ProjectContext;
   summary: AnalysisSummary;
+  sources: SourceContext[];
 }) {
   return `
 Produza em uma única resposta os subsídios do ranking e os cinco textos finais.
@@ -78,18 +82,24 @@ Quadro informado de engajamento por canal: ${input.project.engagementByChannel |
 ${dataJson(input.summary)}
 </DADOS_CONSOLIDADOS>
 
+<FONTES_PUBLICAS_DOS_LINKS>
+${dataJson(input.sources)}
+</FONTES_PUBLICAS_DOS_LINKS>
+
 RANKING
 - Crie exatamente um item para cada tema recebido, usando themeIndex de 1 até a quantidade de temas.
 - Explique o argumento em até 350 caracteres, sem repetir contagem, percentual ou título.
 - Escolha representativeId somente entre os candidatos do próprio tema. A postagem será inserida pelo sistema, sem reescrita.
 - Não crie texto para "Outras opiniões sobre o assunto".
+- O ranking contém somente os cinco principais, mas sua leitura deve considerar argumentOverview, que reúne todos os argumentos extraídos de todas as postagens e comentários.
 
 TEXTOS FINAIS
 - Cada campo deve conter somente o texto, sem título e com no máximo 400 caracteres com espaços.
-- whatTheySay: resuma os principais argumentos e posições.
+- whatTheySay: resuma os principais argumentos e posições depois de considerar todo o argumentOverview, não apenas os cinco itens do ranking.
 - featuredChannel: destaque canais, postagens e pontos de engajamento. Se os dados não permitirem comparação, diga isso.
 - whoMobilized: destaque autores, quantidade de postagens, pontos de engajamento e concentração. Não associe autor a uma postagem específica.
-- whatMobilized: relacione o contexto e os argumentos aos possíveis motivos da participação. Marque inferências como possibilidades.
+- whatMobilized: cruze os argumentos de todas as postagens com o contexto e as fontes públicas dos links. Diferencie fatos descritos nas fontes, motivos declarados nos comentários e inferências sobre possíveis gatilhos da participação.
+- Uma fonte com available=false não foi consultada com sucesso: use apenas seu título informado, sem tratá-lo como fato confirmado.
 - executiveSummary: narrativa contínua e sucinta; não cite o nome ou assunto da proposta e não informe valores de pontos de engajamento.
 - Use linguagem simples, direta, imparcial e sem gerúndio.
 

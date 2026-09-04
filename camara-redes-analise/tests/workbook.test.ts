@@ -139,3 +139,29 @@ test("mantém a célula longa no arquivo e avisa sobre compactação para IA", (
   assert.match(result.warnings.join(" "), /versão compacta e anonimizada/);
   assert.equal(result.sheets[0].rows[0].values[1], longText);
 });
+
+test("prioriza o texto completo e reconhece colunas de link e título", () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Original Post", "Full Text", "URL", "Title"],
+      [
+        "Texto repetido da publicação original",
+        "Comentário individual com um argumento",
+        "https://noticias.example/materia",
+        "Notícia relacionada",
+      ],
+    ]),
+    "Comentários",
+  );
+  const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const result = parseWorkbookArrayBuffer(bytes, {
+    fileName: "comentarios.xlsx",
+    fileSize: bytes.byteLength,
+  });
+
+  assert.equal(result.sheets[0].detectedColumns.text, "Full Text");
+  assert.equal(result.sheets[0].detectedColumns.link, "URL");
+  assert.equal(result.sheets[0].detectedColumns.title, "Title");
+});

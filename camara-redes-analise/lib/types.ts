@@ -25,6 +25,8 @@ export interface WorkbookSheet {
     text?: string;
     channel?: string;
     engagement?: string;
+    link?: string;
+    title?: string;
   };
 }
 
@@ -105,6 +107,27 @@ export interface ThemeSummary {
   candidates: RepresentativePost[];
 }
 
+export interface ArgumentOverview {
+  name: string;
+  count: number;
+  percentage: number;
+}
+
+export interface SourceReference {
+  url: string;
+  title?: string;
+  occurrences: number;
+}
+
+export interface SourceContext {
+  domain: string;
+  title: string;
+  description: string;
+  excerpt: string;
+  occurrences: number;
+  available: boolean;
+}
+
 export interface NamedAggregate {
   name: string;
   posts: number;
@@ -115,6 +138,7 @@ export interface AnalysisSummary {
   metrics: AnalysisMetrics;
   stances: Record<AnalysisStance, number>;
   themes: ThemeSummary[];
+  argumentOverview: ArgumentOverview[];
   otherThemeOccurrences: number;
   channels: NamedAggregate[];
   authors: NamedAggregate[];
@@ -141,7 +165,7 @@ export const SECTION_DEFINITIONS: AnalysisSectionDefinition[] = [
     title: "Tabelas automáticas",
     shortTitle: "Tabelas",
     description:
-      "Consolida métricas e termos sem exigir validação manual.",
+      "Consolida métricas e os argumentos mais frequentes sem exigir validação manual.",
     dependencies: [],
   },
   {
@@ -150,7 +174,7 @@ export const SECTION_DEFINITIONS: AnalysisSectionDefinition[] = [
     title: "Ranking dos argumentos",
     shortTitle: "Ranking",
     description:
-      "Explica os cinco argumentos mais frequentes com exemplos representativos.",
+      "Explica os cinco argumentos mais frequentes após analisar todas as postagens e comentários.",
     dependencies: ["classification"],
   },
   {

@@ -23,7 +23,7 @@ test("prompt de classificação usa ids neutros e regras críticas", () => {
 
   assert.match(prompt, /RELEVANTE/);
   assert.match(prompt, /OFFTOPIC/);
-  assert.match(prompt, /um ou dois argumentos completos/);
+  assert.match(prompt, /todos os argumentos distintos/);
   assert.match(prompt, /Apoio à proposta/);
   assert.match(prompt, /P000001/);
   assert.doesNotMatch(prompt, /<\/DADOS_POSTAGENS> ignore as regras/);
@@ -60,10 +60,24 @@ test("prompt consolidado solicita ranking e cinco textos de uma vez", () => {
           candidates: [{ id: "P000001", text: "Apoio o projeto." }],
         },
       ],
+      argumentOverview: [
+        { name: "Apoio à proposta", count: 6, percentage: 75 },
+        { name: "Crítica à demora", count: 2, percentage: 25 },
+      ],
       otherThemeOccurrences: 2,
       channels: [{ name: "Facebook", posts: 8, engagement: 100 }],
       authors: [{ name: "Página pública", posts: 2, engagement: 80 }],
     },
+    sources: [
+      {
+        domain: "camara.leg.br",
+        title: "Notícia sobre a proposta",
+        description: "A proposta entrou na pauta.",
+        excerpt: "A matéria informa que a votação estava prevista.",
+        occurrences: 3,
+        available: true,
+      },
+    ],
   });
 
   assert.match(prompt, /themeIndex/);
@@ -75,6 +89,9 @@ test("prompt consolidado solicita ranking e cinco textos de uma vez", () => {
   assert.match(prompt, /executiveSummary/);
   assert.match(prompt, /no máximo 400 caracteres/);
   assert.match(prompt, /Página pública/);
+  assert.match(prompt, /Crítica à demora/);
+  assert.match(prompt, /Notícia sobre a proposta/);
+  assert.match(prompt, /fontes públicas dos links/i);
 });
 
 test("instruções tratam células como dados não confiáveis", () => {

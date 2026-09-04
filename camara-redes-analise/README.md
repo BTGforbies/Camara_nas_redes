@@ -6,13 +6,14 @@ Sistema para ler bases em CSV ou Excel, classificar argumentos com a Groq, revis
 
 1. O navegador valida e lê o arquivo.
 2. Repetições, linhas corrompidas, somas, percentuais, canais e autores são processados localmente, sem tokens.
-3. Somente textos compactos e com identificadores óbvios removidos são classificados em lotes pequenos pelo modelo **openai/gpt-oss-20b**.
+3. Somente textos compactos e com identificadores óbvios removidos são classificados em lotes pequenos pelo modelo **openai/gpt-oss-20b**. Cada postagem ou comentário pode registrar todos os seus argumentos distintos.
 4. As duas tabelas são montadas localmente e não exigem conversa nem validação manual.
-5. Um único pedido ao **openai/gpt-oss-120b** gera o ranking e os cinco textos finais.
-6. O chat envia somente a resposta em revisão e as últimas mensagens, nunca a planilha.
-7. O PDF recebe o ranking e os cinco textos validados.
+5. Até 12 links públicos mais relevantes, priorizando os informados no formulário, são consultados para extrair título, descrição e um trecho curto. Links indisponíveis não interrompem a análise.
+6. Um único pedido ao **openai/gpt-oss-120b** recebe o mapa completo dos argumentos, os cinco principais com exemplos e o contexto público dos links para gerar o ranking e os cinco textos finais.
+7. O chat envia somente a resposta em revisão e as últimas mensagens, nunca a planilha.
+8. O PDF recebe o ranking e os cinco textos validados.
 
-Não é usado **groq/compound**, busca web, execução de código ou qualquer ferramenta externa do modelo.
+Não é usado **groq/compound**, execução de código ou ferramenta externa do modelo. A consulta de links é feita pelo próprio servidor, com bloqueio de endereços locais, limite de tamanho, tempo e redirecionamentos.
 
 ## Rodar no GitHub Codespaces
 
@@ -49,6 +50,7 @@ Abra a porta **5173** pela aba **Portas** do Codespaces. Mantenha a porta privad
 - URL, e-mail, telefone, CPF e identificadores iniciados por @ são removidos dos textos antes do envio.
 - Cada texto enviado possui no máximo 900 caracteres e usa um id neutro, como P000001.
 - Somente nomes agregados dos autores de maior destaque, sem ligação com postagens individuais, seguem para a redação de “Quem mobilizou”.
+- Quando existirem links, o servidor recebe no máximo 12 URLs públicas para leitura. A Groq recebe apenas domínio, título, descrição e trecho curto da página, sem o endereço completo.
 - A aplicação não possui banco de dados nem grava o arquivo, prompts ou respostas no servidor.
 
 Para maior proteção, um administrador da organização deve ativar **Zero Data Retention** em [Groq Data Controls](https://console.groq.com/settings/data-controls). A remoção automática de identificadores reduz exposição, mas não substitui revisão institucional quando a base contiver dados pessoais sensíveis em linguagem livre.

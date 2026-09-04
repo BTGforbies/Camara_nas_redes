@@ -11,7 +11,7 @@ const recordSchema = z.object({
 const requestSchema = z.object({
   subject: z.string().trim().min(1).max(1_000),
   context: z.string().trim().min(1).max(1_500),
-  knownThemes: z.array(z.string().trim().min(1).max(48)).max(30).default([]),
+  knownThemes: z.array(z.string().trim().min(1).max(48)).max(80).default([]),
   records: z.array(recordSchema).min(1).max(20),
 });
 
@@ -19,7 +19,7 @@ const outputItemSchema = z.object({
   id: z.string(),
   status: z.enum(["RELEVANTE", "OFFTOPIC"]),
   stance: z.enum(["POSITIVO", "NEGATIVO", "NEUTRO"]),
-  themes: z.array(z.string()).max(2),
+  themes: z.array(z.string()).max(12),
 });
 
 const outputSchema = z.object({
@@ -47,7 +47,7 @@ const classificationJsonSchema = {
           themes: {
             type: "array",
             minItems: 0,
-            maxItems: 2,
+            maxItems: 12,
             items: { type: "string", maxLength: 48 },
           },
         },
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
         name: "classificacao_postagens",
         schema: classificationJsonSchema,
       },
-      maxCompletionTokens: Math.min(4_000, Math.max(1_000, body.records.length * 100)),
+      maxCompletionTokens: Math.min(5_000, Math.max(1_200, body.records.length * 220)),
       signal: request.signal,
     });
     const parsed = outputSchema.parse(JSON.parse(generated.text));
